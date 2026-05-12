@@ -1,0 +1,70 @@
+# ============================================================
+# Configuração Global do Framework de Geração SQLX
+# ============================================================
+
+project:
+  name: "dataform-generator"
+  version: "1.0.0"
+
+# --- Caminhos ---
+paths:
+  parquet_input: "./parquet"
+  output_root: "./generated"
+  bronze_output: "./generated/bronze"
+  silver_output: "./generated/silver"
+  docs_output: "./generated/docs"
+  metadata_output: "./generated/metadata"
+
+# --- Camada Bronze ---
+bronze:
+  schema: "bronze"
+  type: "operations"
+  has_output: true
+  bucket_env_var: "bucket_name"
+  tags: ["bronze"]
+  labels:
+    owner: "gd"
+    confidencialidade: "baixa"
+
+# --- Camada Silver ---
+silver:
+  schema: "silver"
+  type: "table"
+  tags: ["silver"]
+  partition_by: ""
+  cluster_by: []
+  labels:
+    owner: "gd"
+    confidencialidade: "baixa"
+  # Intervalo de lookback para filtro de partição
+  lookback_days: 1
+  # Frequência de atualização repassada para helpers.checkUpdate
+  update_frequency: "diario"
+  # Colunas de auditoria adicionadas automaticamente
+  audit_columns:
+    - name: "DT_UPDATED"
+      description: "Data da última atualização do registro na tabela"
+
+# --- Naming Conventions ---
+naming:
+  snake_case: true
+  normalize_columns: true
+
+# --- Fontes de Dados (tabelas conhecidas) ---
+datasources_file: "./tabelas.json"
+glossary_file: "./glossario.json"
+
+# --- Integração com IA (OpenRouter) ---
+ai:
+  enabled: true
+  api_key_env: "OPENROUTER_API_KEY"
+  model: "openai/gpt-oss-120b:free"
+  fallback_models:
+    - "openai/gpt-oss-20b:free"
+    - "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+    - "google/gemma-4-31b-it:free"
+  max_retries: 3
+  timeout_seconds: 60
+  # Classificação de sensibilidade automática
+  detect_pii: true
+  classify_sensitivity: true

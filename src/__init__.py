@@ -1,0 +1,9 @@
+"""
+src/__init__.py
+src/utils/__init__.py
+src/parquet/__init__.py
+src/ai/__init__.py
+src/generators/__init__.py
+src/metadata/__init__.py
+src/catalog/__init__.py
+"""

@@ -1,0 +1,4 @@
+[
+    "gs://...",
+    "./parquet/local/arquivo.parquet"
+]
