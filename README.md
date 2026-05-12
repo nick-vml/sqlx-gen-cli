@@ -26,12 +26,6 @@ pip install -e .
 
 A partir deste momento, o comando global **`sqlx_gen`** estará disponível em qualquer pasta do seu terminal!
 
-> [!TIP]
-> **⚠️ Erro de "Comando não encontrado" (PATH)?**
-> Se ao rodar `sqlx_gen` o terminal disser que o comando não existe, é provável que a pasta de scripts do Python não esteja no seu PATH. 
-> No Windows, geralmente fica em: `%APPDATA%\Python\Python3xx\Scripts`. 
-> Adicione esse caminho às suas Variáveis de Ambiente ou utilize `python -m main` (se estiver na raiz do projeto) como fallback.
-
 ---
 
 ## 🚀 Como Utilizar (Guia Rápido)
