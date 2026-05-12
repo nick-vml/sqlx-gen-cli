@@ -26,36 +26,32 @@ pip install -e .
 
 A partir deste momento, o comando global **`sqlx_gen`** estará disponível em qualquer pasta do seu terminal!
 
+> [!TIP]
+> **⚠️ Erro de "Comando não encontrado" (PATH)?**
+> Se ao rodar `sqlx_gen` o terminal disser que o comando não existe, é provável que a pasta de scripts do Python não esteja no seu PATH. 
+> No Windows, geralmente fica em: `%APPDATA%\Python\Python3xx\Scripts`. 
+> Adicione esse caminho às suas Variáveis de Ambiente ou utilize `python -m main` (se estiver na raiz do projeto) como fallback.
+
 ---
 
-## 🚀 Como Utilizar (Passo a Passo)
+## 🚀 Como Utilizar (Guia Rápido)
 
-### 1. Inicializando um novo projeto (Scaffolding)
-Navegue até a pasta do seu repositório de dados/Dataform no terminal e rode o comando de inicialização. Ele irá criar toda a estrutura de pastas necessária (`config/`, `generated/`, `parquet/`), além dos arquivos `.env`, `tabelas.json` e do principal `generator.yaml` de forma automática.
-
+### 1. Inicializar estrutura
+Entre na pasta do seu projeto e rode:
 ```bash
 sqlx_gen init
 ```
 
-*Nota: não se esqueça de preencher sua chave de API no arquivo `.env`.*
+### 2. Configurar fontes
+Adicione arquivos `.parquet` na pasta `parquet/` ou edite o arquivo `tabelas.json` com caminhos do GCS.
 
-### 2. Configurando o `tabelas.json`
-O arquivo `tabelas.json` na raiz atua como a sua fila de processamento em batch. Ele é simplesmente um *Array* de caminhos. O framework entende perfeitamente caminhos do Google Cloud Storage.
-
-```json
-[
-  "gs://vml_stg_gcp/omie/contas_a_pagar/date=2026-01-23/contas_a_pagar.parquet",
-  "gs://vml_stg_gcp/erp_xpto/clientes/date=2026-01-23/clientes.parquet",
-  "./parquet/arquivo_local.parquet"
-]
-```
-
-### 3. Rodando o Gerador (Modo Interativo)
-Basta chamar o comando principal vazio para abrir o **Menu Guiado**:
-
+### 3. Rodar o menu interativo
 ```bash
 sqlx_gen
 ```
+
+---
+
 
 Isso mostrará opções coloridas e fáceis de usar:
 1. **Gerar arquivos SQLX (Bronze/Silver):** Lê o(s) arquivo(s) Parquet, infere colunas, e cria as lógicas SQLX nas pastas `generated/`. Ele perguntará se você quer rodar a Inteligência Artificial para enriquecer a taxonomia.
@@ -64,27 +60,25 @@ Isso mostrará opções coloridas e fáceis de usar:
 
 ---
 
-## 💻 3. Modo Automação (CLI para CI/CD)
+---
 
-Se você preferir executar as rotinas de forma programática via scripts em pipelines, utilize as flags diretas do CLI:
+## 🛠️ Detalhamento dos Comandos
 
-### Gerar Camadas (Com IA)
-```bash
-# Processa todos os arquivos do tabelas.json na camada Silver com IA ligada
-sqlx_gen generate --layer silver --ai
+- **`sqlx_gen init`**: Cria a estrutura base.
+- **`sqlx_gen generate`**: Processa Parquets e cria `.sqlx`.
+- **`sqlx_gen generate-docs`**: Cria o portal de documentação em Markdown.
 
-# Passa múltiplos caminhos direto via argumento (ignorando tabelas.json) e desativa a IA
-sqlx_gen generate -i gs://bucket/a.parquet -i gs://bucket/b.parquet --layer both --no-ai
-```
+## ❓ Perguntas Frequentes (FAQ)
 
-### Documentação e Schemas
-```bash
-# Cria o esquema estático (dicionário bruto) de um diretório
-sqlx_gen infer-schema --input gs://bucket/dados/ --output ./generated/metadata
+**1. Comando não encontrado?**
+Certifique-se de que o Python Scripts está no seu PATH ou use `python main.py` como alternativa.
 
-# Gera os Markdowns de Data Cataloging usando Inteligência Artificial
-sqlx_gen generate-docs --ai
-```
+**2. Onde estão os arquivos?**
+Tudo é gerado dentro da pasta `generated/`.
+
+**3. Preciso de chave de IA?**
+Opcional, mas recomendado para melhores descrições na camada Silver.
+
 
 ---
 

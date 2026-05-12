@@ -8,14 +8,16 @@ setup(
     packages=find_packages(include=["src", "src.*"]),
     py_modules=["main"],
     install_requires=[
-        "typer>=0.9.0",
+        "typer>=0.12.0",
         "rich>=13.0.0",
         "jinja2>=3.1.0",
         "pyarrow>=14.0.0",
         "gcsfs>=2023.10.0",
         "pyyaml>=6.0.0",
         "requests>=2.31.0",
-        "python-dotenv>=1.0.0"
+        "python-dotenv>=1.0.0",
+        "pydantic>=2.0.0",
+        "openai>=1.0.0"
     ],
     entry_points={
         "console_scripts": [
