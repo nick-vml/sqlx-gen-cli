@@ -4,16 +4,16 @@ main.py
 CLI do framework de geração SQLX.
 
 Comandos disponíveis:
-  generate      — Gera Bronze + Silver a partir de tabelas.json / Parquet
-  infer-schema  — Extrai schemas de arquivos .parquet
+  generate      — Gera Bronze + Silver a partir de tabelas.json / Arquivos
+  infer-schema  — Extrai schemas de arquivos (.parquet, .csv, .json)
   enrich-ai     — Enriquece metadata via OpenRouter
   generate-docs — Gera documentação Markdown e data dictionary
 
 O flag --input aceita:
-  - Um diretório local:         --input ./parquet/
+  - Um diretório local:         --input ./data/
   - Um prefixo GCS:             --input gs://bucket/dados/
   - Um arquivo único:           --input gs://bucket/dados/a.parquet
-  - Múltiplos arquivos (repita)--input gs://bucket/a.parquet --input gs://bucket/b.parquet
+  - Múltiplos arquivos (repita)--input gs://bucket/a.csv --input gs://bucket/b.json
 """
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ project:
   version: "1.0.0"
 
 paths:
-  parquet_input: "./parquet"
+  parquet_input: "./files"
   output_root: "./generated"
   bronze_output: "./generated/bronze"
   silver_output: "./generated/silver"
@@ -124,7 +124,7 @@ def init_project():
     _banner()
     console.rule("[bold]Inicializando projeto[/bold]")
     
-    dirs = ["config", "parquet", "generated/bronze", "generated/silver", "generated/metadata", "generated/docs"]
+    dirs = ["config", "files", "generated/bronze", "generated/silver", "generated/metadata", "generated/docs"]
     for d in dirs:
         Path(d).mkdir(parents=True, exist_ok=True)
         console.print(f"  [green]✓[/green] Diretório {d} criado/verificado")
@@ -136,7 +136,7 @@ def init_project():
         
     tabelas_file = Path("tabelas.json")
     if not tabelas_file.exists():
-        tabelas_file.write_text('[\n  "./parquet/arquivo_exemplo.parquet"\n]\n', encoding="utf-8")
+        tabelas_file.write_text('[\n  "./files/arquivo_exemplo.parquet"\n]\n', encoding="utf-8")
         console.print(f"  [green]✓[/green] Arquivo tabelas.json criado")
         
     env_file = Path(".env")
@@ -196,31 +196,34 @@ def _interactive_menu():
     while True:
         console.print("\n[bold]🚀 VML Dataform - SQLX Generator[/bold]")
         console.print("1. [cyan]Gerar[/cyan] arquivos SQLX (Bronze/Silver)")
-        console.print("2. [cyan]Inferir[/cyan] Schemas de Parquet")
-        console.print("3. [cyan]Gerar Documentação[/cyan] Markdown (AI)")
+        console.print("2. [cyan]Inferir[/cyan] Schemas (Arquivos)")
+        console.print("3. [dim]Gerar Documentação Markdown (AI) [DESABILITADO][/dim]")
         console.print("4. [red]Sair[/red]")
 
         choice = Prompt.ask("\nOpção", choices=["1", "2", "3", "4"], default="1")
 
         if choice == "4":
             break
+        elif choice == "3":
+            console.print("[yellow]A geração de documentação está temporariamente desabilitada.[/yellow]")
+            continue
         elif choice == "1":
-            p = Prompt.ask("Caminho do Parquet (deixe vazio para ler do tabelas.json)", default="")
+            p = Prompt.ask("Caminho do arquivo (deixe vazio para ler do tabelas.json)", default="")
             input_path = [p] if p else []
             layer = Prompt.ask("Camada a gerar", choices=["bronze", "silver", "both"], default="both")
-            db = Prompt.ask("Filtrar por banco (deixe vazio para todos)", default="")
-            use_ai = Confirm.ask("Deseja enriquecer os metadados com Inteligência Artificial (OpenRouter)?", default=True)
-            generate(input=input_path, output=None, db=db if db else None, layer=layer, ai=use_ai)
+            
+            # IA só faz sentido para a camada Silver
+            use_ai = False
+            if layer in ("silver", "both"):
+                use_ai = Confirm.ask("Deseja enriquecer os metadados com Inteligência Artificial (OpenRouter)?", default=True)
+            
+            generate(input=input_path, output=None, db=None, layer=layer, ai=use_ai)
         elif choice == "2":
-            p = Prompt.ask("Caminho do Parquet (local ou GCS)", default="./parquet")
+            p = Prompt.ask("Caminho do arquivo ou diretório (local ou GCS)", default="./files")
             out = Prompt.ask("Diretório de saída", default="./generated/metadata")
             infer_schema(input=[p], output=out)
-        elif choice == "3":
-            p = Prompt.ask("Caminho do Parquet (deixe vazio para ler do tabelas.json)", default="")
-            input_path = [p] if p else []
-            out = Prompt.ask("Diretório de saída", default="./generated/docs")
-            use_ai = Confirm.ask("Deseja documentar com inteligência artificial?", default=True)
-            generate_docs(input=input_path, output=out, ai=use_ai)
+
+
 
         if not Confirm.ask("\n[bold]Deseja realizar outra operação?[/bold]", default=True):
             break
@@ -240,12 +243,12 @@ def generate(
     ai: bool = typer.Option(True, "--ai/--no-ai", help="Habilitar IA"),
 ):
     """
-    Gera arquivos SQLX Bronze e/ou Silver inferindo schemas do Parquet.
+    Gera arquivos SQLX Bronze e/ou Silver inferindo schemas de Parquet, CSV ou JSON.
 
     Exemplos:
       python main.py generate --layer both
       python main.py generate --input gs://bucket/rfb/
-      python main.py generate --input gs://bucket/a.parquet --input gs://bucket/b.parquet
+      python main.py generate --input gs://bucket/a.csv --input gs://bucket/b.json
     """
     _banner()
     config_path = _ensure_config()
@@ -274,7 +277,7 @@ def generate(
     from src.parquet.schema_extractor import extract_all_schemas
     resolved = _resolve_inputs(paths_to_process, config.paths.parquet_input)
     
-    with console.status("[bold cyan]Extraindo schemas do Parquet...[/bold cyan]", spinner="dots"):
+    with console.status("[bold cyan]Extraindo schemas dos arquivos...[/bold cyan]", spinner="dots"):
         schemas = extract_all_schemas(resolved)
 
     if not schemas:
@@ -289,10 +292,31 @@ def generate(
         with console.status("[bold magenta]Enriquecendo metadata com AI (Isso pode levar alguns minutos)...[/bold magenta]", spinner="bouncingBar"):
             ai_results = manager.enrich_batch(schemas)
 
+    # --- Confirmação para arquivo único ---
+    if len(schemas) == 1:
+        schema = schemas[0]
+        from rich.prompt import Prompt, Confirm
+        
+        # Previsão do nome final
+        p_db = db or schema.db or "raw"
+        p_table = schema.table_name
+        
+        console.print(f"\n[bold yellow]🔍 Confirmação de Nome[/bold yellow]")
+        console.print(f"Origem: [dim]{schema.source_file}[/dim]")
+        
+        if not Confirm.ask(f"O nome do arquivo gerado será [bold green]{p_db}_{p_table}.sqlx[/bold green]. Está correto?", default=True):
+            schema.db = Prompt.ask("Informe o nome do Banco (Dataset)", default=p_db)
+            schema.table_name = Prompt.ask("Informe o nome da Tabela", default=p_table)
+            console.print(f"✅ Ajustado para: [bold green]{schema.db}_{schema.table_name}.sqlx[/bold green]\n")
+        else:
+            schema.db = p_db # Garante que o banco seja fixado
+
     console.rule(f"[bold]Gerando arquivos SQLX ({layer})[/bold]")
     for schema in schemas:
-        if db:
+        # Se foi passado via flag --db, sobrecarrega o schema (exceto se já confirmamos acima)
+        if db and len(schemas) > 1:
             schema.db = db
+
         if layer in ("bronze", "both"):
             bronze_gen.generate_from_schema(schema, output_dir=config.paths.bronze_output)
         if layer in ("silver", "both"):
@@ -320,7 +344,7 @@ def generate(
 
 @app.command(name="infer-schema")
 def infer_schema(
-    input: List[str] = typer.Option([], "--input", "-i", help="Caminho local, GCS ou lista de .parquet. Repita para múltiplos."),
+    input: List[str] = typer.Option([], "--input", "-i", help="Caminho local, GCS ou lista de arquivos (.parquet, .csv, .json). Repita para múltiplos."),
     output: str = typer.Option("./generated/metadata", "--output", "-o", help="Diretório de saída dos schemas JSON"),
 ):
     """
@@ -334,13 +358,13 @@ def infer_schema(
     _ensure_config()
     from src.parquet.schema_extractor import extract_all_schemas, save_schema_json
 
-    resolved = _resolve_inputs(input, "./parquet")
+    resolved = _resolve_inputs(input, "./files")
     
-    with console.status("[bold cyan]Inferindo schemas do Parquet...[/bold cyan]", spinner="dots"):
+    with console.status("[bold cyan]Inferindo schemas dos arquivos...[/bold cyan]", spinner="dots"):
         schemas = extract_all_schemas(resolved)
 
     if not schemas:
-        console.print("[yellow]Nenhum arquivo .parquet encontrado.[/yellow]")
+        console.print("[yellow]Nenhum arquivo compatível encontrado.[/yellow]")
         raise typer.Exit(0)
 
     saved = []
@@ -375,7 +399,7 @@ def infer_schema(
 
 @app.command(name="generate-docs")
 def generate_docs(
-    input: List[str] = typer.Option([], "--input", "-i", help="Caminho local, GCS ou lista de .parquet. Repita para múltiplos."),
+    input: List[str] = typer.Option([], "--input", "-i", help="Caminho local, GCS ou lista de arquivos. Repita para múltiplos."),
     output: str = typer.Option("./generated/docs", "--output", "-o", help="Diretório de docs"),
     ai: bool = typer.Option(True, "--ai/--no-ai", help="Habilitar IA"),
 ):
@@ -394,9 +418,9 @@ def generate_docs(
     from src.catalog.doc_generator import DocGenerator
     import json as _json
 
-    resolved = _resolve_inputs(input, "./parquet")
+    resolved = _resolve_inputs(input, "./files")
     
-    with console.status("[bold cyan]Extraindo schemas do Parquet...[/bold cyan]", spinner="dots"):
+    with console.status("[bold cyan]Extraindo schemas dos arquivos...[/bold cyan]", spinner="dots"):
         schemas = extract_all_schemas(resolved)
 
     if not schemas:

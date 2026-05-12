@@ -2,7 +2,7 @@
 
 O **Dataform Forge** é um framework (CLI) desenhado para acelerar, padronizar e automatizar a criação de pipelines e documentações dentro do ecossistema Google Cloud Dataform / BigQuery.
 
-Ele lê de arquivos **Parquet** brutos (locais ou no GCS), extrai schemas de forma instantânea e "forja" as camadas Bronze e Silver do Dataform, aplicando **Taxonomias** de engenharia de dados (ex: `CD_`, `DT_`, `VL_`) e enriquecendo as descrições de negócio usando **Inteligência Artificial (OpenRouter)**.
+Ele lê de arquivos brutos (**Parquet, CSV, JSON**) locais ou no GCS, extrai schemas de forma instantânea e "forja" as camadas Bronze e Silver do Dataform, aplicando **Taxonomias** de engenharia de dados (ex: `CD_`, `DT_`, `VL_`) e enriquecendo as descrições de negócio usando **Inteligência Artificial (OpenRouter)**.
 
 ---
 
@@ -39,11 +39,12 @@ A partir deste momento, o comando global **`sqlx_gen`** estará disponível em q
 ### 1. Inicializar estrutura
 Entre na pasta do seu projeto e rode:
 ```bash
+# Cria as pastas config, files, generated e arquivos base
 sqlx_gen init
 ```
 
 ### 2. Configurar fontes
-Adicione arquivos `.parquet` na pasta `parquet/` ou edite o arquivo `tabelas.json` com caminhos do GCS.
+Adicione seus arquivos de origem na pasta `files/` (suporta `.parquet`, `.csv`, `.json`, `.jsonl`, `.ndjson`) ou edite o arquivo `tabelas.json` com caminhos locais ou do GCS utilizando o formato **gsutil URI** (`gs://bucket/path/`). O gerador detectará o formato automaticamente pela extensão.
 
 ### 3. Rodar o menu interativo
 ```bash
@@ -54,8 +55,8 @@ sqlx_gen
 
 
 Isso mostrará opções coloridas e fáceis de usar:
-1. **Gerar arquivos SQLX (Bronze/Silver):** Lê o(s) arquivo(s) Parquet, infere colunas, e cria as lógicas SQLX nas pastas `generated/`. Ele perguntará se você quer rodar a Inteligência Artificial para enriquecer a taxonomia.
-2. **Inferir Schemas de Parquet:** Útil apenas para visualizar rapidamente o dicionário de dados da origem (salva em JSON).
+1. **Gerar arquivos SQLX (Bronze/Silver):** Lê o(s) arquivo(s) de origem, infere colunas, e cria as lógicas SQLX nas pastas `generated/`. Ele perguntará se você quer rodar a Inteligência Artificial para enriquecer a taxonomia.
+2. **Inferir Schemas:** Útil apenas para visualizar rapidamente o dicionário de dados da origem (salva em JSON).
 3. **Gerar Documentação Markdown (AI):** Usa as tabelas extraídas e a inteligência artificial para montar uma documentação limpa em formato `.md`.
 
 ---

@@ -121,24 +121,37 @@ def _get_gcs_fs():
         )
 
 
-def _gcs_list_parquets(gcs_path: str) -> list[str]:
-    """Lista todos os arquivos .parquet sob um caminho GCS."""
-    fs = _get_gcs_fs()
-    raw_path = gcs_path.removeprefix("gs://")
+def _list_files(path: str, extensions: list[str]) -> list[str]:
+    """Lista arquivos com as extensões permitidas no GCS ou Local."""
+    if _is_gcs(path):
+        fs = _get_gcs_fs()
+        raw_path = path.removeprefix("gs://")
+        
+        # Arquivo direto
+        if any(raw_path.lower().endswith(ext) for ext in extensions):
+            return [path] if fs.exists(raw_path) else []
 
-    # Arquivo direto
-    if raw_path.endswith(".parquet"):
-        return [gcs_path] if fs.exists(raw_path) else []
+        # Listagem recursiva
+        all_files = []
+        for ext in extensions:
+            try:
+                found = fs.glob(f"{raw_path.rstrip('/')}/**/*{ext}")
+                if not found:
+                    found = fs.glob(f"{raw_path.rstrip('/')}/*{ext}")
+                all_files.extend([f"gs://{f}" for f in found])
+            except Exception:
+                continue
+        return all_files
+    else:
+        local_dir = Path(path)
+        if local_dir.is_file():
+            return [path] if any(path.lower().endswith(ext) for ext in extensions) else []
+        
+        files = []
+        for ext in extensions:
+            files.extend([str(p) for p in local_dir.rglob(f"*{ext}")])
+        return files
 
-    # Listagem recursiva
-    try:
-        all_files = fs.glob(f"{raw_path.rstrip('/')}/**/*.parquet")
-        if not all_files:
-            all_files = fs.glob(f"{raw_path.rstrip('/')}/*.parquet")
-        return [f"gs://{f}" for f in all_files]
-    except Exception as e:
-        log.error(f"Erro ao listar GCS: {e}")
-        return []
 
 
 # ---------------------------------------------------------------
@@ -147,81 +160,110 @@ def _gcs_list_parquets(gcs_path: str) -> list[str]:
 
 class SchemaExtractor:
     """
-    Extrai schema de um arquivo .parquet.
-
+    Extrai schema de arquivos .parquet, .csv ou .json.
     Suporta caminhos locais e gs:// (GCS).
     """
 
-    def __init__(self, parquet_path: str | Path):
-        self.path = str(parquet_path)
+    def __init__(self, file_path: str | Path):
+        self.path = str(file_path)
+        self.extension = Path(self.path).suffix.lower()
         self._is_gcs_path = _is_gcs(self.path)
 
     def extract(self) -> TableSchema:
-        """Le o parquet e extrai o schema sem carregar dados."""
+        """Extrai o schema do arquivo baseado na sua extensão."""
+        if self.extension == ".parquet":
+            return self._extract_parquet()
+        elif self.extension == ".csv":
+            return self._extract_csv()
+        elif self.extension in (".json", ".jsonl", ".ndjson"):
+            return self._extract_json()
+        else:
+            raise ValueError(f"Extensão não suportada: {self.extension}")
+
+    def _get_input_stream(self):
         if self._is_gcs_path:
-            return self._extract_gcs()
-        return self._extract_local()
+            fs = _get_gcs_fs()
+            return fs.open(self.path.removeprefix("gs://"))
+        return open(self.path, "rb")
 
-    # ----------------------------------------------------------
-    # Local
-    # ----------------------------------------------------------
+    def _infer_names(self) -> tuple[str, str]:
+        """Infere db (dataset) e table_name a partir do path GCS ou Local."""
+        if self._is_gcs_path:
+            raw = self.path.removeprefix("gs://")
+            parts = [p for p in raw.split("/") if p]
+            
+            # Padrão gs://projeto/dataset/tabela/arquivo.ext
+            # parts[0] = projeto (bucket)
+            # parts[1] = dataset (db)
+            # parts[2] = tabela
+            db = parts[1] if len(parts) >= 2 else ""
+            table_name = parts[2] if len(parts) >= 3 else Path(self.path).stem
+            return db, table_name
+        else:
+            return "", Path(self.path).stem
 
-    def _extract_local(self) -> TableSchema:
-        local_path = Path(self.path)
-        if not local_path.exists():
-            raise FileNotFoundError(f"Arquivo nao encontrado: {self.path}")
-
-        log.info(f"Lendo schema local: {local_path.name}")
-        pf = pq.ParquetFile(local_path)
-        arrow_schema: pa.Schema = pf.schema_arrow
-        row_count = pf.metadata.num_rows
-
-        return TableSchema(
-            table_name=local_path.stem,
-            source_file=self.path,
-            row_count=row_count,
-            columns=[self._parse_field(field) for field in arrow_schema],
-        )
-
-    # ----------------------------------------------------------
-    # GCS
-    # ----------------------------------------------------------
-
-    def _extract_gcs(self) -> TableSchema:
-        fs = _get_gcs_fs()
-        raw = self.path.removeprefix("gs://")
+    def _extract_parquet(self) -> TableSchema:
+        db, table_name = self._infer_names()
         
-        # Infere db e table_name pela estrutura: gs://bucket/db/name/...
-        parts = raw.split("/")
-        db = ""
-        table_name = Path(raw).stem
-        if len(parts) >= 4:
-            db = parts[1]
-            table_name = parts[2]
+        if self._is_gcs_path:
+            fs = _get_gcs_fs()
+            try:
+                arrow_schema = pq.read_schema(self.path, filesystem=fs)
+                pf_meta = pq.read_metadata(self.path, filesystem=fs)
+                row_count = pf_meta.num_rows
+            except Exception:
+                # Fallback se não conseguir ler apenas metadata
+                with self._get_input_stream() as f:
+                    pf = pq.ParquetFile(f)
+                    arrow_schema = pf.schema_arrow
+                    row_count = pf.metadata.num_rows
 
-        log.info(f"Lendo schema GCS: {self.path} (db={db}, name={table_name})")
+            return TableSchema(
+                table_name=table_name,
+                source_file=self.path,
+                db=db,
+                row_count=row_count,
+                columns=[self._parse_field(field) for field in arrow_schema],
+            )
+        else:
+            local_path = Path(self.path)
+            pf = pq.ParquetFile(local_path)
+            return TableSchema(
+                table_name=table_name,
+                source_file=self.path,
+                db=db,
+                row_count=pf.metadata.num_rows,
+                columns=[self._parse_field(field) for field in pf.schema_arrow],
+            )
 
-        # Lê apenas o schema sem baixar dados
-        try:
-            arrow_schema = pq.read_schema(self.path, filesystem=fs)
-        except Exception:
-            arrow_schema = pq.ParquetFile(fs.open(raw)).schema_arrow
+    def _extract_csv(self) -> TableSchema:
+        import pyarrow.csv as pv
+        db, table_name = self._infer_names()
+        log.info(f"Inferindo schema de CSV: {self.path} (table={table_name})")
+        with self._get_input_stream() as f:
+            table = pv.read_csv(f)
+            return TableSchema(
+                table_name=table_name,
+                source_file=self.path,
+                db=db,
+                row_count=table.num_rows,
+                columns=[self._parse_field(field) for field in table.schema],
+            )
 
-        # Conta linhas via metadata
-        try:
-            pf_meta = pq.read_metadata(self.path, filesystem=fs)
-            row_count = pf_meta.num_rows
-        except Exception:
-            row_count = 0
-            log.warning(f"  Nao foi possivel contar linhas de {table_name}")
+    def _extract_json(self) -> TableSchema:
+        import pyarrow.json as pj
+        db, table_name = self._infer_names()
+        log.info(f"Inferindo schema de JSON: {self.path} (table={table_name})")
+        with self._get_input_stream() as f:
+            table = pj.read_json(f)
+            return TableSchema(
+                table_name=table_name,
+                source_file=self.path,
+                db=db,
+                row_count=table.num_rows,
+                columns=[self._parse_field(field) for field in table.schema],
+            )
 
-        return TableSchema(
-            table_name=table_name,
-            source_file=self.path,
-            db=db,
-            row_count=row_count,
-            columns=[self._parse_field(field) for field in arrow_schema],
-        )
 
     # ----------------------------------------------------------
     # Parser de campo
@@ -265,20 +307,7 @@ def _extract_single(path: str) -> TableSchema | None:
 
 
 def extract_from_list(paths: list[str | Path]) -> list[TableSchema]:
-    """
-    Extrai schemas de uma lista explícita de arquivos .parquet.
-
-    Cada item pode ser:
-    - Caminho local: ./parquet/clientes.parquet
-    - Caminho GCS:   gs://bucket/dados/clientes.parquet
-
-    Exemplo:
-        schemas = extract_from_list([
-            "gs://bucket/rfb/empresas.parquet",
-            "gs://bucket/rfb/socios.parquet",
-            "./local/clientes.parquet",
-        ])
-    """
+    """Extrai schemas de uma lista explícita de arquivos."""
     schemas: list[TableSchema] = []
     log.info(f"Processando lista de {len(paths)} arquivo(s)...")
     for path in paths:
@@ -290,43 +319,32 @@ def extract_from_list(paths: list[str | Path]) -> list[TableSchema]:
 
 def extract_all_schemas(path: str | Path | list[str | Path]) -> list[TableSchema]:
     """
-    Extrai schemas de .parquet a partir de:
-    - Um diretório local:    './parquet/'
-    - Um prefixo GCS:        'gs://bucket/prefix/'
-    - Um arquivo único:      'gs://bucket/file.parquet' ou './local/file.parquet'
-    - Uma lista de caminhos: ['gs://bucket/a.parquet', 'gs://bucket/b.parquet']
-
-    Returns:
-        Lista de TableSchema.
+    Extrai schemas de arquivos (.parquet, .csv, .json) a partir de:
+    - Um diretório local ou GCS
+    - Um arquivo único
+    - Uma lista de caminhos
     """
-    # ---- Lista de caminhos ----
+    extensions = [".parquet", ".csv", ".json", ".jsonl", ".ndjson"]
+    
     if isinstance(path, list):
         return extract_from_list(path)
 
     path_str = str(path)
-    schemas: list[TableSchema] = []
-
-    # ---- Arquivo único (GCS ou local) ----
-    if path_str.endswith(".parquet"):
+    
+    # Se for um arquivo único direto
+    if any(path_str.lower().endswith(ext) for ext in extensions):
         result = _extract_single(path_str)
         return [result] if result else []
 
-    # ---- GCS (diretório/prefixo) ----
-    if _is_gcs(path_str):
-        parquet_files = _gcs_list_parquets(path_str)
-        if not parquet_files:
-            log.warning(f"Nenhum .parquet encontrado em: {path_str}")
-            return schemas
-        log.info(f"Encontrados {len(parquet_files)} arquivo(s) no GCS.")
-        return extract_from_list(parquet_files)
+    # Se for um diretório (GCS ou Local)
+    found_files = _list_files(path_str, extensions)
+    if not found_files:
+        log.warning(f"Nenhum arquivo suportado {extensions} encontrado em: {path_str}")
+        return []
+    
+    log.info(f"Encontrados {len(found_files)} arquivo(s).")
+    return extract_from_list(found_files)
 
-    # ---- Local (diretório) ----
-    local_dir = Path(path_str)
-    parquet_files_local = list(local_dir.rglob("*.parquet"))
-    if not parquet_files_local:
-        log.warning(f"Nenhum .parquet encontrado em: {local_dir}")
-        return schemas
-    return extract_from_list([str(p) for p in parquet_files_local])
 
 
 
