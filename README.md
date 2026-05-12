@@ -10,8 +10,15 @@ Ele lê de arquivos **Parquet** brutos (locais ou no GCS), extrai schemas de for
 
 Como este framework foi refatorado para ser distribuído como um pacote Python nativo (`pip`), você não precisa mais rodar via script local.
 
-1. Clone o repositório ou navegue até a pasta base onde o `setup.py` se encontra.
-2. Execute o comando de instalação no modo "editável" (ou instale diretamente via pip):
+### Opção 1: Instalação direta via Git (Recomendado para usuários)
+Você pode instalar o CLI diretamente a partir do repositório remoto sem precisar baixar os arquivos manualmente. Execute o seguinte comando no seu terminal:
+
+```bash
+pip install git+https://github.com/nick-vml/sqlx-gen-cli.git
+```
+
+### Opção 2: Instalação local (Para desenvolvimento)
+Se você for modificar o código, clone o repositório ou navegue até a pasta base onde o `setup.py` se encontra. Em seguida, instale no modo "editável":
 
 ```bash
 pip install -e .
