@@ -6,8 +6,8 @@ CLI do framework de geração SQLX.
 Comandos disponíveis:
   generate      — Gera Bronze + Silver a partir de tabelas.json / Arquivos
   infer-schema  — Extrai schemas de arquivos (.parquet, .csv, .json)
-  enrich-ai     — Enriquece metadata via OpenRouter
   generate-docs — Gera documentação Markdown e data dictionary
+  validate      — Valida os arquivos SQLX gerados
 
 O flag --input aceita:
   - Um diretório local:         --input ./data/
@@ -18,7 +18,7 @@ O flag --input aceita:
 from __future__ import annotations
 
 import json
-import sys
+import re
 from pathlib import Path
 from typing import List, Optional
 
@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-
+from rich import box
 from src.utils.config_loader import load_config
 from src.utils.logger import get_logger
 
@@ -114,6 +114,7 @@ ai:
     - "google/gemma-4-31b-it:free"
   max_retries: 3
   timeout_seconds: 60
+  max_parallel: 3
   detect_pii: true
   classify_sensitivity: true
 """
@@ -137,12 +138,17 @@ def init_project():
     tabelas_file = Path("tabelas.json")
     if not tabelas_file.exists():
         tabelas_file.write_text('[\n  "./files/arquivo_exemplo.parquet"\n]\n', encoding="utf-8")
-        console.print(f"  [green]✓[/green] Arquivo tabelas.json criado")
+        console.print("  [green]✓[/green] Arquivo tabelas.json criado")
         
+    glossary_file = Path("glossario.json")
+    if not glossary_file.exists():
+        glossary_file.write_text("{}\n", encoding="utf-8")
+        console.print("  [green]✓[/green] Arquivo glossario.json criado")
+
     env_file = Path(".env")
     if not env_file.exists():
         env_file.write_text('OPENROUTER_API_KEY=sk-or-v1-...\n', encoding="utf-8")
-        console.print(f"  [green]✓[/green] Arquivo .env criado")
+        console.print("  [green]✓[/green] Arquivo .env criado")
 
     console.print("\n[bold green]Projeto inicializado com sucesso![/bold green]")
 
@@ -161,11 +167,23 @@ def _load_json(path: str) -> dict | list:
 
 
 def _banner():
-    console.print(Panel.fit(
-        "[bold cyan]Dataform SQLX Generator[/bold cyan]\n"
-        "[dim]Parquet -> Schema -> Bronze -> Silver -> AI -> Docs[/dim]",
+    import pyfiglet
+    from rich.align import Align
+    
+    title = pyfiglet.figlet_format("SQLX Gen", font="slant")
+    
+    subtitle = (
+        "[bold magenta]Framework de Geração Autónoma para Dataform & BigQuery[/bold magenta]\n"
+        "[dim]Parquet -> Schema -> Bronze -> Silver -> IA -> Docs[/dim]"
+    )
+    
+    panel = Panel(
+        Align.center(f"[cyan]{title}[/cyan]\n{subtitle}"),
         border_style="cyan",
-    ))
+        box=box.DOUBLE_EDGE,
+        padding=(1, 2)
+    )
+    console.print(panel)
 
 
 def _resolve_inputs(inputs: list[str], default: str) -> list[str] | str:
@@ -182,6 +200,40 @@ def _resolve_inputs(inputs: list[str], default: str) -> list[str] | str:
     return inputs
 
 
+def _display_drift_report(drift_reports: list[dict]):
+    """Exibe um relatório visual de schema drift."""
+    drifts = [r for r in drift_reports if r and r.get("has_drift")]
+    if not drifts:
+        return
+
+    console.print()
+    table = Table(title="⚠️  Schema Drift Detectado", border_style="yellow", box=box.MINIMAL_HEAVY_HEAD)
+    table.add_column("Tabela", style="cyan", no_wrap=True)
+    table.add_column("+ Colunas", justify="right", style="bold green")
+    table.add_column("- Colunas", justify="right", style="bold red")
+    table.add_column("Tipo Alterado", justify="right", style="bold yellow")
+
+    for drift in drifts:
+        table.add_row(
+            drift["table"],
+            str(len(drift["added"])),
+            str(len(drift["removed"])),
+            str(len(drift["type_changed"])),
+        )
+
+    console.print(table)
+
+    # Detalhes
+    for drift in drifts:
+        if drift["added"]:
+            console.print(f"  [green]+[/green] [cyan]{drift['table']}[/cyan]: {', '.join(drift['added'])}")
+        if drift["removed"]:
+            console.print(f"  [red]-[/red] [cyan]{drift['table']}[/cyan]: {', '.join(drift['removed'])}")
+        for tc in drift["type_changed"]:
+            console.print(f"  [yellow]~[/yellow] [cyan]{drift['table']}.{tc['column']}[/cyan]: [dim]{tc['old_type']} -> {tc['new_type']}[/dim]")
+    console.print()
+
+
 @app.callback(invoke_without_command=True)
 def main_callback(ctx: typer.Context):
     """Callback para iniciar o modo interativo se nenhum comando for passado."""
@@ -191,42 +243,66 @@ def main_callback(ctx: typer.Context):
 
 def _interactive_menu():
     from rich.prompt import Prompt, Confirm
+    import sys
 
+    # Limpa a tela
+    console.clear()
     _banner()
+    
     while True:
-        console.print("\n[bold]🚀 VML Dataform - SQLX Generator[/bold]")
-        console.print("1. [cyan]Gerar[/cyan] arquivos SQLX (Bronze/Silver)")
-        console.print("2. [cyan]Inferir[/cyan] Schemas (Arquivos)")
-        console.print("3. [dim]Gerar Documentação Markdown (AI) [DESABILITADO][/dim]")
-        console.print("4. [red]Sair[/red]")
+        menu_text = (
+            "[bold cyan]1.[/bold cyan] [green]🚀 Gerar Pipelines[/green] [dim](Cria arquivos SQLX Bronze e Silver)[/dim]\n"
+            "[bold cyan]2.[/bold cyan] [blue]🔍 Inferir Schemas[/blue] [dim](Extrai JSON de arquivos Parquet/CSV)[/dim]\n"
+            "[bold cyan]3.[/bold cyan] [yellow]✅ Validar SQLX[/yellow]   [dim](Verifica integridade e erros de sintaxe)[/dim]\n"
+            "[bold cyan]4.[/bold cyan] [red]🚪 Sair[/red]"
+        )
+        
+        console.print(Panel(menu_text, title="[bold]Menu Principal[/bold]", border_style="blue", padding=(1, 2)))
 
-        choice = Prompt.ask("\nOpção", choices=["1", "2", "3", "4"], default="1")
+        choice = Prompt.ask("\n[bold]Selecione uma opção[/bold]", choices=["1", "2", "3", "4"], default="1")
 
         if choice == "4":
-            break
-        elif choice == "3":
-            console.print("[yellow]A geração de documentação está temporariamente desabilitada.[/yellow]")
-            continue
+            console.print("\n[dim]Encerrando o gerador... Até logo! 👋[/dim]")
+            sys.exit(0)
+            
         elif choice == "1":
-            p = Prompt.ask("Caminho do arquivo (deixe vazio para ler do tabelas.json)", default="")
+            console.print("\n[bold cyan]─ Configuração da Geração ─[/bold cyan]")
+            p = Prompt.ask("📂 Caminho do arquivo/pasta [dim](Vazio = usar tabelas.json)[/dim]", default="")
             input_path = [p] if p else []
-            layer = Prompt.ask("Camada a gerar", choices=["bronze", "silver", "both"], default="both")
+            layer = Prompt.ask("🛠️  Camadas", choices=["bronze", "silver", "both"], default="both")
             
             # IA só faz sentido para a camada Silver
             use_ai = False
+            force = False
             if layer in ("silver", "both"):
-                use_ai = Confirm.ask("Deseja enriquecer os metadados com Inteligência Artificial (OpenRouter)?", default=True)
+                use_ai = Confirm.ask("🧠 Enriquecer metadados com IA (OpenRouter)?", default=True)
+                if use_ai:
+                    force = Confirm.ask("🔄 Forçar nova análise [dim](ignorar cache existente)[/dim]?", default=False)
             
-            generate(input=input_path, output=None, db=None, layer=layer, ai=use_ai)
+            console.print()
+            generate(input=input_path, output=None, db=None, layer=layer, ai=use_ai, force=force)
+            
         elif choice == "2":
-            p = Prompt.ask("Caminho do arquivo ou diretório (local ou GCS)", default="./files")
-            out = Prompt.ask("Diretório de saída", default="./generated/metadata")
+            console.print("\n[bold cyan]─ Inferência de Schemas ─[/bold cyan]")
+            p = Prompt.ask("📂 Caminho origem [dim](Local ou gs://)[/dim]", default="./files")
+            out = Prompt.ask("💾 Diretório destino", default="./generated/metadata")
+            
+            console.print()
             infer_schema(input=[p], output=out)
+            
+        elif choice == "3":
+            console.print("\n[bold cyan]─ Validação de Código ─[/bold cyan]")
+            d = Prompt.ask("📂 Diretório dos arquivos SQLX", default="./generated/silver")
+            
+            console.print()
+            validate(directory=d)
 
-
-
-        if not Confirm.ask("\n[bold]Deseja realizar outra operação?[/bold]", default=True):
+        if not Confirm.ask("\n[bold magenta]Deseja realizar outra operação?[/bold magenta]", default=True):
+            console.print("\n[dim]Encerrando o gerador... Até logo! 👋[/dim]")
             break
+        
+        console.clear()
+        _banner()
 
 
 
@@ -241,14 +317,15 @@ def generate(
     db: Optional[str] = typer.Option(None, "--db", help="Filtrar por banco (ex: rfb, pgfn)"),
     layer: str = typer.Option("both", "--layer", "-l", help="bronze | silver | both"),
     ai: bool = typer.Option(True, "--ai/--no-ai", help="Habilitar IA"),
+    force: bool = typer.Option(False, "--force/--cache", help="Forçar nova análise IA (--force) ou usar cache (--cache)"),
 ):
     """
     Gera arquivos SQLX Bronze e/ou Silver inferindo schemas de Parquet, CSV ou JSON.
 
     Exemplos:
       python main.py generate --layer both
-      python main.py generate --input gs://bucket/rfb/
-      python main.py generate --input gs://bucket/a.csv --input gs://bucket/b.json
+      python main.py generate --input gs://bucket/rfb/ --force
+      python main.py generate --input gs://bucket/a.csv --input gs://bucket/b.json --cache
     """
     _banner()
     config_path = _ensure_config()
@@ -274,7 +351,7 @@ def generate(
         else:
             paths_to_process = [config.paths.parquet_input]
 
-    from src.parquet.schema_extractor import extract_all_schemas
+    from src.extractor.schema_extractor import extract_all_schemas
     resolved = _resolve_inputs(paths_to_process, config.paths.parquet_input)
     
     with console.status("[bold cyan]Extraindo schemas dos arquivos...[/bold cyan]", spinner="dots"):
@@ -284,13 +361,30 @@ def generate(
         console.print("[yellow]Nenhum schema encontrado.[/yellow]")
         raise typer.Exit(0)
 
+    # --- Schema Drift Detection ---
+    from src.metadata.metadata_manager import MetadataManager
+    manager = MetadataManager(config, glossary=glossary, force=force)
+
+    drift_reports = []
+    for schema in schemas:
+        drift = manager.detect_drift_from_saved(schema)
+        if drift:
+            drift_reports.append(drift)
+
+    if drift_reports:
+        _display_drift_report(drift_reports)
+
+    # --- Enriquecimento com IA ---
     ai_results = {}
     if layer in ("silver", "both") and config.ai.enabled and ai:
-        from src.metadata.metadata_manager import MetadataManager
-        manager = MetadataManager(config, glossary=glossary)
-        
-        with console.status("[bold magenta]Enriquecendo metadata com AI (Isso pode levar alguns minutos)...[/bold magenta]", spinner="bouncingBar"):
+        mode_label = "[bold red]FORCE[/bold red]" if force else "[bold green]CACHE[/bold green]"
+        with console.status(f"[bold magenta]Enriquecendo metadata com AI ({mode_label})...[/bold magenta]", spinner="bouncingBar"):
             ai_results = manager.enrich_batch(schemas)
+
+        # Auto-aprendizado do glossário
+        new_entries = manager.update_glossary(ai_results, config.glossary_file)
+        if new_entries:
+            console.print(f"[dim]📖 Glossário auto-atualizado com {new_entries} novas entradas[/dim]")
 
     # --- Confirmação para arquivo único ---
     if len(schemas) == 1:
@@ -301,7 +395,7 @@ def generate(
         p_db = db or schema.db or "raw"
         p_table = schema.table_name
         
-        console.print(f"\n[bold yellow]🔍 Confirmação de Nome[/bold yellow]")
+        console.print("\n[bold yellow]🔍 Confirmação de Nome[/bold yellow]")
         console.print(f"Origem: [dim]{schema.source_file}[/dim]")
         
         if not Confirm.ask(f"O nome do arquivo gerado será [bold green]{p_db}_{p_table}.sqlx[/bold green]. Está correto?", default=True):
@@ -311,7 +405,7 @@ def generate(
         else:
             schema.db = p_db # Garante que o banco seja fixado
 
-    console.rule(f"[bold]Gerando arquivos SQLX ({layer})[/bold]")
+    console.rule(f"[bold magenta]Gerando arquivos SQLX ({layer})[/bold magenta]")
     for schema in schemas:
         # Se foi passado via flag --db, sobrecarrega o schema (exceto se já confirmamos acima)
         if db and len(schemas) > 1:
@@ -327,15 +421,15 @@ def generate(
                 output_dir=config.paths.silver_output
             )
     if layer in ("silver", "both"):
-        from rich.panel import Panel
         aviso = (
             "Revise [bold]muito[/bold] o código gerado em [cyan].sqlx[/cyan]!\n"
             "Verifique se as tipagens e formatações estão corretas e utilize as funções padronizadas "
             "do [bold green]utils.js[/bold green] do Dataform para eventuais tratamentos complexos e limpezas."
         )
-        console.print(Panel(aviso, title="⚠️  AVISO: Camada Silver", border_style="yellow"))
+        console.print()
+        console.print(Panel(aviso, title="⚠️  [bold yellow]Atenção: Camada Silver[/bold yellow]", border_style="yellow", padding=(1, 2)))
 
-    console.print("\n[bold green]Geração concluída![/bold green]")
+    console.print("\n[bold green]✨ Geração concluída com sucesso![/bold green]\n")
 
 
 # ---------------------------------------------------------------
@@ -356,7 +450,7 @@ def infer_schema(
     """
     _banner()
     _ensure_config()
-    from src.parquet.schema_extractor import extract_all_schemas, save_schema_json
+    from src.extractor.schema_extractor import extract_all_schemas, save_schema_json
 
     resolved = _resolve_inputs(input, "./files")
     
@@ -364,7 +458,7 @@ def infer_schema(
         schemas = extract_all_schemas(resolved)
 
     if not schemas:
-        console.print("[yellow]Nenhum arquivo compatível encontrado.[/yellow]")
+        console.print("[yellow]⚠️  Nenhum arquivo compatível encontrado.[/yellow]")
         raise typer.Exit(0)
 
     saved = []
@@ -373,24 +467,108 @@ def infer_schema(
         saved.append(path)
 
     # Exibe tabela resumo
-    table = Table(title="Schemas Extraídos")
-    table.add_column("Tabela", style="cyan")
-    table.add_column("Colunas", justify="right")
-    table.add_column("Linhas", justify="right")
-    table.add_column("Arquivo JSON")
+    table = Table(title="📊 Schemas Extraídos", box=box.SIMPLE_HEAD)
+    table.add_column("Tabela", style="cyan", no_wrap=True)
+    table.add_column("Colunas", justify="right", style="magenta")
+    table.add_column("Linhas", justify="right", style="green")
+    table.add_column("Amostra", justify="right", style="blue")
+    table.add_column("Arquivo JSON", style="dim")
 
     for schema, path in zip(schemas, saved):
         table.add_row(
             schema.table_name,
             str(len(schema.columns)),
             f"{schema.row_count:,}",
+            f"{len(schema.sample_data)} linhas",
             path.name,
         )
 
     console.print(table)
-    console.print(f"\n[bold green]{len(saved)} schemas salvos em: {output}[/bold green]")
+    console.print(f"\n[bold green]✅ {len(saved)} schemas salvos em: {output}[/bold green]\n")
 
 
+# ---------------------------------------------------------------
+# Comando: validate
+# ---------------------------------------------------------------
+
+@app.command(name="validate")
+def validate(
+    directory: str = typer.Option("./generated/silver", "--dir", "-d", help="Diretório com arquivos .sqlx para validar"),
+):
+    """
+    Valida os arquivos SQLX gerados, verificando:
+    - Sintaxe do bloco config
+    - Aliases duplicados no SELECT
+    - CASTs ausentes
+    - Consistência entre columns e SELECT
+
+    Exemplos:
+      python main.py validate --dir ./generated/silver
+    """
+    _banner()
+    console.rule("[bold cyan]Validando arquivos SQLX[/bold cyan]")
+
+    sqlx_dir = Path(directory)
+    if not sqlx_dir.exists():
+        console.print(f"[bold red]❌ Diretório não encontrado:[/bold red] {directory}")
+        raise typer.Exit(1)
+
+    sqlx_files = list(sqlx_dir.glob("*.sqlx"))
+    if not sqlx_files:
+        console.print(f"[yellow]⚠️  Nenhum arquivo .sqlx encontrado em [bold]{directory}[/bold][/yellow]")
+        raise typer.Exit(0)
+
+    total_issues = 0
+
+    for file_path in sqlx_files:
+        content = file_path.read_text(encoding="utf-8")
+        issues: list[str] = []
+
+        # 1. Verifica se tem bloco config
+        if "config {" not in content:
+            issues.append("Bloco `config {}` não encontrado")
+
+        # 2. Extrai aliases do SELECT (AS NOME_COLUNA)
+        aliases = re.findall(r'\bAS\s+(\w+)', content, re.IGNORECASE)
+        seen: dict[str, int] = {}
+        for alias in aliases:
+            upper = alias.upper()
+            seen[upper] = seen.get(upper, 0) + 1
+        duplicates = [name for name, count in seen.items() if count > 1]
+        if duplicates:
+            issues.append(f"Aliases duplicados: {', '.join(duplicates)}")
+
+        # 3. Verifica colunas no bloco columns vs aliases no SELECT
+        columns_match = re.search(r'columns:\s*\{([^}]+)\}', content, re.DOTALL)
+        if columns_match:
+            doc_cols = set(re.findall(r'(\w+):', columns_match.group(1)))
+            sel_cols = {a.upper() for a in aliases}
+            
+            # Colunas documentadas mas ausentes no SELECT
+            missing_in_select = doc_cols - sel_cols
+            if missing_in_select:
+                issues.append(f"Documentadas mas ausentes no SELECT: {', '.join(missing_in_select)}")
+
+        # 4. Verifica se há colunas sem CAST
+        select_block = content.split("SELECT")[-1] if "SELECT" in content else ""
+        raw_cols = re.findall(r'^\s+(\w+)\s+AS\s+', select_block, re.MULTILINE)
+        if raw_cols:
+            issues.append(f"Colunas sem CAST/SAFE_CAST: {', '.join(raw_cols)}")
+
+        # Output
+        if issues:
+            total_issues += len(issues)
+            console.print(f"\n[bold yellow]⚠️  {file_path.name}[/bold yellow]")
+            for issue in issues:
+                console.print(f"  [red]->[/red] {issue}")
+        else:
+            console.print(f"  [green]✓[/green] [dim]{file_path.name}[/dim]")
+
+    console.print()
+    if total_issues == 0:
+        console.print(Panel(f"[bold green]✅ Todos os {len(sqlx_files)} arquivos foram validados sem problemas![/bold green]", border_style="green"))
+    else:
+        console.print(Panel(f"[bold red]⚠️  {total_issues} problema(s) encontrado(s) em {len(sqlx_files)} arquivo(s)[/bold red]", border_style="red"))
 
 
 # ---------------------------------------------------------------
@@ -402,21 +580,22 @@ def generate_docs(
     input: List[str] = typer.Option([], "--input", "-i", help="Caminho local, GCS ou lista de arquivos. Repita para múltiplos."),
     output: str = typer.Option("./generated/docs", "--output", "-o", help="Diretório de docs"),
     ai: bool = typer.Option(True, "--ai/--no-ai", help="Habilitar IA"),
+    force: bool = typer.Option(False, "--force/--cache", help="Forçar nova análise IA"),
 ):
     """
     Gera documentação Markdown e data dictionary usando as inferências da IA.
 
     Exemplos:
       python main.py generate-docs --input gs://bucket/dados/
+      python main.py generate-docs --force
     """
     _banner()
     
     config_path = _ensure_config()
     config = load_config(config_path)
 
-    from src.parquet.schema_extractor import extract_all_schemas
+    from src.extractor.schema_extractor import extract_all_schemas
     from src.catalog.doc_generator import DocGenerator
-    import json as _json
 
     resolved = _resolve_inputs(input, "./files")
     
@@ -431,7 +610,7 @@ def generate_docs(
     if config.ai.enabled and ai:
         from src.metadata.metadata_manager import MetadataManager
         glossary: dict = _load_json(config.glossary_file) if Path(config.glossary_file).exists() else {}
-        manager = MetadataManager(config, glossary=glossary)
+        manager = MetadataManager(config, glossary=glossary, force=force)
         
         with console.status("[bold magenta]Enriquecendo metadata com AI para documentação...[/bold magenta]", spinner="bouncingBar"):
             ai_map = manager.enrich_batch(schemas)

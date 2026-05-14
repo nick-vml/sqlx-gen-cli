@@ -14,10 +14,10 @@ setup(
         "pyarrow>=14.0.0",
         "gcsfs>=2023.10.0",
         "pyyaml>=6.0.0",
-        "requests>=2.31.0",
         "python-dotenv>=1.0.0",
         "pydantic>=2.0.0",
-        "openai>=1.0.0"
+        "openai>=1.0.0",
+        "pyfiglet>=1.0.2"
     ],
     entry_points={
         "console_scripts": [

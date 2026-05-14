@@ -1,4 +1,3 @@
 [
-    "gs://...",
-    "./parquet/local/arquivo.parquet"
+    "gs://vml_stg_gcp/iilex/processos_com_bloqueio/date=2026-05-14/processos_com_bloqueio_2026_05_14_15_23_49.parquet"
 ]

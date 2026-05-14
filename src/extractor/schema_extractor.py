@@ -11,7 +11,6 @@ Autenticacao GCS: usa Application Default Credentials (ADC).
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -96,6 +95,7 @@ class TableSchema(BaseModel):
     source_file: str
     db: str = ""
     row_count: int = 0
+    sample_data: list[dict[str, Any]] = []  # Pequena amostra para a IA
     columns: list[ColumnSchema] = []
 
     def to_json(self, indent: int = 2) -> str:
@@ -158,6 +158,8 @@ def _list_files(path: str, extensions: list[str]) -> list[str]:
 # Extrator principal
 # ---------------------------------------------------------------
 
+SAMPLE_SIZE = 5
+
 class SchemaExtractor:
     """
     Extrai schema de arquivos .parquet, .csv ou .json.
@@ -204,35 +206,46 @@ class SchemaExtractor:
 
     def _extract_parquet(self) -> TableSchema:
         db, table_name = self._infer_names()
+        sample_data = []
         
         if self._is_gcs_path:
             fs = _get_gcs_fs()
             try:
-                arrow_schema = pq.read_schema(self.path, filesystem=fs)
-                pf_meta = pq.read_metadata(self.path, filesystem=fs)
-                row_count = pf_meta.num_rows
-            except Exception:
-                # Fallback se não conseguir ler apenas metadata
-                with self._get_input_stream() as f:
+                # Usa ParquetFile para ser mais eficiente na leitura de metadados e amostra
+                with fs.open(self.path.removeprefix("gs://")) as f:
                     pf = pq.ParquetFile(f)
                     arrow_schema = pf.schema_arrow
                     row_count = pf.metadata.num_rows
+                    
+                    # Tenta ler amostra do primeiro row group
+                    if row_count > 0:
+                        sample_data = pf.read_row_group(0).slice(0, SAMPLE_SIZE).to_pylist()
+            except Exception as e:
+                log.error(f"Erro ao extrair parquet GCS {self.path}: {e}")
+                # Fallback básico se falhar a leitura detalhada
+                arrow_schema = pq.read_schema(self.path, filesystem=fs)
+                row_count = 0
 
             return TableSchema(
                 table_name=table_name,
                 source_file=self.path,
                 db=db,
                 row_count=row_count,
+                sample_data=sample_data,
                 columns=[self._parse_field(field) for field in arrow_schema],
             )
         else:
             local_path = Path(self.path)
             pf = pq.ParquetFile(local_path)
+            # Lê amostra local
+            sample_data = pf.read_row_group(0).slice(0, SAMPLE_SIZE).to_pylist()
+            
             return TableSchema(
                 table_name=table_name,
                 source_file=self.path,
                 db=db,
                 row_count=pf.metadata.num_rows,
+                sample_data=sample_data,
                 columns=[self._parse_field(field) for field in pf.schema_arrow],
             )
 
@@ -242,11 +255,13 @@ class SchemaExtractor:
         log.info(f"Inferindo schema de CSV: {self.path} (table={table_name})")
         with self._get_input_stream() as f:
             table = pv.read_csv(f)
+            sample_data = table.slice(0, SAMPLE_SIZE).to_pylist()
             return TableSchema(
                 table_name=table_name,
                 source_file=self.path,
                 db=db,
                 row_count=table.num_rows,
+                sample_data=sample_data,
                 columns=[self._parse_field(field) for field in table.schema],
             )
 
@@ -256,11 +271,13 @@ class SchemaExtractor:
         log.info(f"Inferindo schema de JSON: {self.path} (table={table_name})")
         with self._get_input_stream() as f:
             table = pj.read_json(f)
+            sample_data = table.slice(0, SAMPLE_SIZE).to_pylist()
             return TableSchema(
                 table_name=table_name,
                 source_file=self.path,
                 db=db,
                 row_count=table.num_rows,
+                sample_data=sample_data,
                 columns=[self._parse_field(field) for field in table.schema],
             )
 

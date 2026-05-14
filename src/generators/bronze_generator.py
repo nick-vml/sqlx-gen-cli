@@ -8,16 +8,17 @@ Gera arquivos .sqlx da camada Bronze a partir de:
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from jinja2 import Environment, BaseLoader
+from rich.console import Console
 
-from src.parquet.schema_extractor import TableSchema
+from src.extractor.schema_extractor import TableSchema
 from src.utils.config_loader import GeneratorConfig
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
+console = Console()
 
 # ---------------------------------------------------------------
 # Template Jinja2 para Bronze SQLX
@@ -87,7 +88,7 @@ class BronzeGenerator:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         db = schema.db or "raw"
-        table_desc = desc or f"Tabela externa com dados brutos de {schema.table_name}."
+        table_desc = desc or self._build_desc(db, schema.table_name)
 
         return self._render_and_save(schema.table_name, db, table_desc, out_dir)
 
@@ -115,5 +116,5 @@ class BronzeGenerator:
 
         file_path = out_dir / f"{db}_{name}.sqlx"
         file_path.write_text(content, encoding="utf-8")
-        log.info(f"  ✅ Bronze: {file_path.name}")
+        console.print(f"  [green]✓[/green] [dim]Bronze:[/dim] {file_path.name}")
         return file_path

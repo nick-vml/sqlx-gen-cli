@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-from src.parquet.schema_extractor import TableSchema
+from src.extractor.schema_extractor import TableSchema
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -87,7 +87,7 @@ class DocGenerator:
         lines += [
             "",
             "---",
-            f"*Documentação gerada pelo dataform-generator framework*",
+            "*Documentação gerada pelo dataform-generator framework*",
         ]
 
         content = "\n".join(lines)

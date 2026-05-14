@@ -65,6 +65,7 @@ ai:
     - "google/gemma-4-31b-it:free"
   max_retries: 3
   timeout_seconds: 60
+  max_parallel: 3
   # Classificação de sensibilidade automática
   detect_pii: true
   classify_sensitivity: true

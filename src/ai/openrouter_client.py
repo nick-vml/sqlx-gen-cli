@@ -42,21 +42,18 @@ class OpenRouterClient:
     def __init__(
         self,
         api_key: str | None = None,
+        api_key_env: str = "OPENROUTER_API_KEY",
         primary_model: str = "anthropic/claude-3.5-sonnet",
         fallback_models: list[str] | None = None,
         max_retries: int = 3,
         timeout: int = 60,
     ):
-        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY", "")
+        self.api_key = api_key or os.getenv(api_key_env, "")
         if not self.api_key:
-            log.warning("⚠️  OPENROUTER_API_KEY não definida — chamadas AI desativadas.")
+            log.warning(f"⚠️  {api_key_env} não definida — chamadas AI desativadas.")
 
         self.primary_model = primary_model
-        self.fallback_models = fallback_models or [
-            "openai/gpt-4o",
-            "google/gemini-2.0-pro",
-            "mistralai/mistral-large",
-        ]
+        self.fallback_models = fallback_models or []
         self.max_retries = max_retries
         self.timeout = timeout
 

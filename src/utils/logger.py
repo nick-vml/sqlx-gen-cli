@@ -9,13 +9,15 @@ from rich.console import Console
 
 console = Console()
 
+# Inicializa o logging uma única vez no nível do módulo
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(console=console, rich_tracebacks=True)],
+)
+
 
 def get_logger(name: str) -> logging.Logger:
     """Retorna um logger configurado com Rich handler."""
-    logging.basicConfig(
-        level=logging.WARNING,
-        format="%(message)s",
-        datefmt="[%X]",
-        handlers=[RichHandler(console=console, rich_tracebacks=True)],
-    )
     return logging.getLogger(name)

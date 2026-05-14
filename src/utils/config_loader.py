@@ -14,6 +14,11 @@ from pydantic import BaseModel, Field
 # Modelos Pydantic para validação da configuração
 # ---------------------------------------------------------------
 
+class ProjectConfig(BaseModel):
+    name: str = "dataform-generator"
+    version: str = "1.0.0"
+
+
 class PathsConfig(BaseModel):
     parquet_input: str = "./parquet"
     output_root: str = "./generated"
@@ -55,6 +60,11 @@ class SilverConfig(BaseModel):
         populate_by_name = True
 
 
+class NamingConfig(BaseModel):
+    snake_case: bool = True
+    normalize_columns: bool = True
+
+
 class AIConfig(BaseModel):
     enabled: bool = True
     api_key_env: str = "OPENROUTER_API_KEY"
@@ -62,14 +72,17 @@ class AIConfig(BaseModel):
     fallback_models: list[str] = []
     max_retries: int = 3
     timeout_seconds: int = 60
+    max_parallel: int = 3
     detect_pii: bool = True
     classify_sensitivity: bool = True
 
 
 class GeneratorConfig(BaseModel):
+    project: ProjectConfig = ProjectConfig()
     paths: PathsConfig = PathsConfig()
     bronze: BronzeConfig = BronzeConfig()
     silver: SilverConfig = SilverConfig()
+    naming: NamingConfig = NamingConfig()
     ai: AIConfig = AIConfig()
     datasources_file: str = "./tabelas.json"
     glossary_file: str = "./glossario.json"

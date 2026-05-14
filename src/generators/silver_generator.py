@@ -2,24 +2,26 @@
 src/generators/silver_generator.py
 ------------------------------------
 Gera arquivos .sqlx da camada Silver com:
-- CAST explícito por tipo
-- cleanString/padronização
+- Funções utils.js do Dataform sugeridas pela IA
+- CAST explícito por tipo (fallback quando não há IA)
 - Colunas de auditoria (DT_SOURCE_MODIFIED, DT_UPDATED)
 - Deduplicação via _FILE_NAME mais recente
 - Glossário de colunas integrado
+- Prefixos de coluna sugeridos pela IA (taxonomia inteligente)
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from jinja2 import Environment, BaseLoader
+from rich.console import Console
 
-from src.parquet.schema_extractor import TableSchema, ColumnSchema
+from src.extractor.schema_extractor import TableSchema, ColumnSchema
 from src.utils.config_loader import GeneratorConfig
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
+console = Console()
 
 # ---------------------------------------------------------------
 # Template Jinja2 para Silver SQLX
@@ -68,13 +70,13 @@ WITH {{ db }}_{{ name }} AS (
 
 SELECT
 {{ select_block }},
-  PARSE_DATETIME("%Y_%m_%d_%H_%M", REGEXP_EXTRACT(_FILE_NAME, r"\\d{4}_\\d{2}_\\d{2}_\\d{2}_\\d{2}")) AS DT_UPDATED
+  PARSE_DATETIME("%Y_%m_%d_%H_%M", REGEXP_EXTRACT(_FILE_NAME, r"\\\\d{4}_\\\\d{2}_\\\\d{2}_\\\\d{2}_\\\\d{2}")) AS DT_UPDATED
 FROM {{ db }}_{{ name }}
 """
 
 
 # ---------------------------------------------------------------
-# Mapeamento de tipo → expressão de CAST no SELECT
+# Mapeamento de tipo → expressão de CAST no SELECT (fallback)
 # ---------------------------------------------------------------
 
 _CAST_MAP: dict[str, str] = {
@@ -91,6 +93,29 @@ _CAST_MAP: dict[str, str] = {
     "BYTES": 'CAST({col} AS BYTES)',
     "RECORD": '{col}',  # structs — sem cast
 }
+
+# ---------------------------------------------------------------
+# Mapeamento de funções utils.js → expressão SQLX
+# ---------------------------------------------------------------
+
+_UTILS_FUNCTION_MAP: dict[str, str] = {
+    "cleanString":        '${{utils.cleanString("{col}")}}',
+    "removeSpecialChars": '${{utils.removeSpecialChars("{col}")}}',
+    "removeAccents":      '${{utils.removeAccents("{col}")}}',
+    "normalizePercent":   '${{utils.normalizePercent("{col}")}}',
+    "cleanEmail":         '${{utils.cleanEmail("{col}")}}',
+    "castBoolean":        '${{utils.castBoolean("{col}")}}',
+    "castMoneyBRL":       '${{utils.castMoneyBRL("{col}")}}',
+    "extractInteger":     '${{utils.extractInteger("{col}")}}',
+    "safeCastDate":       '${{utils.safeCastDate("{col}")}}',
+    "normalizeExcelDate": '${{utils.normalizeExcelDate("{col}")}}',
+    "normalizeHonorarios": '${{utils.normalizeHonorarios("{col}")}}',
+    "safeCastDatetimeBR": '${{utils.safeCastDatetimeBR("{col}")}}',
+    "get_value_letter":   '${{utils.get_value_letter("{col}")}}',
+}
+
+# Prefixos válidos na taxonomia
+_VALID_PREFIXES = ("CD_", "ID_", "NO_", "DE_", "DT_", "VL_", "QT_", "TP_", "PC_", "IS_")
 
 
 class SilverGenerator:
@@ -115,19 +140,26 @@ class SilverGenerator:
     ) -> Path:
         """
         Gera .sqlx Silver a partir de um TableSchema extraído de Parquet.
-        Usa metadata de IA se disponível para descrições de colunas.
+        Usa metadata de IA se disponível para descrições, prefixos e funções utils.js.
         """
         out_dir = Path(output_dir or self.config.paths.silver_output)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # Enriquece com metadata de IA
+        # Enriquece com metadata de IA (descrições + prefixos + funções)
         col_descriptions: dict[str, str] = {}
+        col_prefixes: dict[str, str] = {}
+        col_functions: dict[str, str] = {}
         if ai_metadata and "columns" in ai_metadata:
             for c in ai_metadata["columns"]:
-                col_descriptions[c["name"].upper()] = c.get("description", "")
+                name_upper = c["name"].upper()
+                col_descriptions[name_upper] = c.get("description", "")
+                if c.get("suggested_prefix"):
+                    col_prefixes[name_upper] = c["suggested_prefix"].upper()
+                if c.get("suggested_function") and c["suggested_function"] != "none":
+                    col_functions[name_upper] = c["suggested_function"]
 
         cols_block, sel_block = self._build_blocks_from_table_schema(
-            schema.columns, col_descriptions
+            schema.columns, col_descriptions, col_prefixes, col_functions
         )
 
         table_desc = desc
@@ -148,67 +180,97 @@ class SilverGenerator:
     # ----------------------------------------------------------
     # Builders de blocos
     # ----------------------------------------------------------
-    
-    def _format_column_name(self, col_name: str) -> str:
-        """Aplica taxonomia (DT_, ID_, CD_, etc.) com base nas regras fornecidas."""
+
+    def _format_column_name(self, col_name: str, ai_prefix: str | None = None) -> str:
+        """
+        Aplica taxonomia (DT_, ID_, CD_, etc.) com base em:
+        1. Prefixo sugerido pela IA (prioridade máxima)
+        2. Regras estáticas de mapeamento
+        3. Fallback DE_ se normalize_columns estiver habilitado
+        """
         name = col_name.upper()
-        
-        # Se já tem um prefixo válido, apenas retorna
-        valid_prefixes = ("CD_", "ID_", "NO_", "DE_", "DT_", "VL_", "QT_", "TP_", "PC_", "IS_")
-        if name.startswith(valid_prefixes):
+
+        # Se normalização de colunas está desabilitada, retorna o nome original em uppercase
+        if not self.config.naming.normalize_columns:
             return name
-            
-        # CD: Código / Identificador
-        if name.startswith("CODIGO_"):
-            return "CD_" + name[7:]
-            
-        # NO: Nome
-        if name.startswith("NOME_"):
-            return "NO_" + name[5:]
-            
-        # DT: Data
-        if name.startswith("DATA_"):
-            return "DT_" + name[5:]
-            
-        # VL: Valor Monetário
-        if name.startswith("VALOR_"):
-            return "VL_" + name[6:]
-            
-        # QT: Quantidade
-        if name.startswith("QUANTIDADE_"):
-            return "QT_" + name[11:]
-        if name.startswith("QTD_"):
-            return "QT_" + name[4:]
-            
-        # TP: Tipo / Categoria
-        if name.startswith("TIPO_"):
-            return "TP_" + name[5:]
-            
-        # PC: Porcentagem
-        if name.startswith("PERCENTUAL_"):
-            return "PC_" + name[11:]
-        if name.startswith("PORCENTAGEM_"):
-            return "PC_" + name[12:]
-        if name.startswith("PCT_"):
-            return "PC_" + name[4:]
-            
-        # IS: Condição (Booleano)
-        if name.startswith("FLAG_"):
-            return "IS_" + name[5:]
-        if name.startswith("INDICADOR_"):
-            return "IS_" + name[10:]
-            
-        # DE: Descrição / Restante (Fallback)
-        # Campos textuais ou qualquer coisa não mapeada pelas regras anteriores
-        return "DE_" + name
+
+        # Se já tem um prefixo válido, apenas retorna
+        if name.startswith(_VALID_PREFIXES):
+            return name
+
+        # Regras de remoção de redundância: se o prefixo for "DT_", não queremos "DT_DATA_"
+        redundancies = {
+            "CD": ["CODIGO_", "ID_"],
+            "NO": ["NOME_"],
+            "DT": ["DATA_"],
+            "VL": ["VALOR_"],
+            "QT": ["QUANTIDADE_", "QTD_"],
+            "TP": ["TIPO_"],
+            "PC": ["PERCENTUAL_", "PORCENTAGEM_", "PCT_"],
+            "IS": ["FLAG_", "INDICADOR_"],
+            "DE": ["DESCRICAO_", "DESC_"]
+        }
+
+        # 1. Decide o prefixo base
+        final_prefix = ai_prefix if ai_prefix and ai_prefix in redundancies else None
+        
+        # Fallback para regras estáticas se a IA não sugeriu ou sugeriu algo inválido
+        if not final_prefix:
+            for prefix, rules in redundancies.items():
+                for rule in rules:
+                    if name.startswith(rule):
+                        final_prefix = prefix
+                        break
+                if final_prefix:
+                    break
+        
+        # Se ainda não encontrou, fallback genérico
+        if not final_prefix:
+            final_prefix = "DE"
+
+        # 2. Limpa o nome da coluna das redundâncias
+        for rule in redundancies.get(final_prefix, []):
+            if name.startswith(rule):
+                name = name[len(rule):]
+                break
+
+        # Caso extremo onde a coluna era apenas a palavra redundante (ex: "DATA")
+        if not name:
+            name = col_name.upper()
+
+        return f"{final_prefix}_{name}"
+
+    def _get_cast_expression(
+        self,
+        col: ColumnSchema,
+        ai_function: str | None = None,
+    ) -> str:
+        """
+        Determina a expressão de CAST/transformação para uma coluna.
+        
+        Prioridade:
+        1. Função utils.js sugerida pela IA
+        2. CAST padrão baseado no tipo do Parquet
+        """
+        # 1. Se a IA sugeriu uma função utils.js, usa ela
+        if ai_function and ai_function in _UTILS_FUNCTION_MAP:
+            return _UTILS_FUNCTION_MAP[ai_function].format(col=col.name)
+
+        # 2. Fallback: CAST padrão pelo tipo
+        cast_expr = _CAST_MAP.get(col.type, 'TRIM(CAST({col} AS STRING))')
+        return cast_expr.format(col=col.name)
 
     def _build_blocks_from_table_schema(
         self,
         columns: list[ColumnSchema],
         col_descriptions: dict[str, str] | None = None,
+        col_prefixes: dict[str, str] | None = None,
+        col_functions: dict[str, str] | None = None,
     ) -> tuple[str, str]:
         """Constrói os blocos columns e SELECT a partir de ColumnSchema (Parquet)."""
         col_descriptions = col_descriptions or {}
+        col_prefixes = col_prefixes or {}
+        col_functions = col_functions or {}
         doc_lines: list[str] = []
         sel_lines: list[str] = []
 
@@ -217,14 +279,14 @@ class SilverGenerator:
                 col_descriptions.get(col.name.upper())
                 or self._get_description(col.name)
             )
-            target_col = self._format_column_name(col.name)
-            
+            ai_prefix = col_prefixes.get(col.name.upper())
+            ai_function = col_functions.get(col.name.upper())
+            target_col = self._format_column_name(col.name, ai_prefix)
+
             doc_lines.append(f'    {target_col}: "{desc}",')
 
-            cast_expr = _CAST_MAP.get(col.type, 'TRIM(CAST({col} AS STRING))')
-            sel_lines.append(
-                f"  {cast_expr.format(col=col.name)} AS {target_col}"
-            )
+            cast_expr = self._get_cast_expression(col, ai_function)
+            sel_lines.append(f"  {cast_expr} AS {target_col}")
 
         return "\n".join(doc_lines), ",\n".join(sel_lines)
 
@@ -288,5 +350,5 @@ class SilverGenerator:
 
         file_path = out_dir / f"{db}_{name}.sqlx"
         file_path.write_text(content, encoding="utf-8")
-        log.info(f"  ✅ Silver: {file_path.name}")
+        console.print(f"  [cyan]✓[/cyan] [dim]Silver:[/dim] {file_path.name}")
         return file_path

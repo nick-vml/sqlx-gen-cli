@@ -3,22 +3,62 @@ src/ai/prompt_builder.py
 ------------------------
 Constrói prompts automaticamente para enviar ao LLM via OpenRouter.
 
-Utiliza o glossário existente (glossario.json) e a tabela de prefixos
-definida no prompt.md como contexto base para geração de taxonomia.
+Utiliza o glossário existente (glossario.json), a tabela de prefixos
+e o catálogo de funções utils.js do Dataform como contexto base.
 """
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-from src.parquet.schema_extractor import TableSchema
+from src.extractor.schema_extractor import TableSchema
+
+
+# ---------------------------------------------------------------
+# Catálogo de funções utils.js do Dataform
+# ---------------------------------------------------------------
+
+UTILS_FUNCTIONS_CATALOG = """
+## FUNÇÕES DISPONÍVEIS DO utils.js (Dataform)
+
+Você DEVE sugerir a função mais adequada para cada coluna no campo "suggested_function".
+Essas funções existem no Dataform e devem ser usadas no SELECT da camada Silver.
+
+| Função                | Tipo de Dado            | Uso / Sintaxe no SQLX                                         |
+|-----------------------|-------------------------|---------------------------------------------------------------|
+| cleanString           | Texto / String geral    | ${utils.cleanString("coluna")}                                |
+| removeSpecialChars    | Texto alfanumérico      | ${utils.removeSpecialChars("coluna")}                         |
+| removeAccents         | Texto com acentos       | ${utils.removeAccents("coluna")}                              |
+| normalizePercent      | Porcentagem / Decimal   | ${utils.normalizePercent("coluna")}                           |
+| cleanEmail            | E-mail                  | ${utils.cleanEmail("coluna")}                                 |
+| castBoolean           | Booleano (Sim/Não/etc)  | ${utils.castBoolean("coluna")}                                |
+| castMoneyBRL          | Monetário R$ (BRL)      | ${utils.castMoneyBRL("coluna")}                               |
+| extractInteger        | Número inteiro em texto | ${utils.extractInteger("coluna")}                             |
+| safeCastDate          | Data (string → DATE)    | ${utils.safeCastDate("coluna")}                               |
+| normalizeExcelDate    | Data de planilha Excel  | ${utils.normalizeExcelDate("coluna")}                         |
+| normalizeHonorarios   | Financeiro ou Texto     | ${utils.normalizeHonorarios("coluna")}                        |
+| safeCastDatetimeBR    | Datetime (fuso SP)      | ${utils.safeCastDatetimeBR("coluna")}                         |
+| get_value_letter      | Letra → Valor primo     | ${utils.get_value_letter("coluna")}                           |
+
+### REGRAS para "suggested_function":
+- **Strings gerais** (nomes, descrições, observações) → "cleanString"
+- **E-mails** → "cleanEmail"
+- **CNPJ, CPF** (códigos alfanuméricos) → "removeSpecialChars" (remove pontos/traços)
+- **Colunas booleanas** (Sim/Não, Ativo/Inativo, True/False) → "castBoolean"
+- **Valores monetários** (R$, formato brasileiro 1.000,00) → "castMoneyBRL"
+- **Datas em formato texto** → "safeCastDate"
+- **Datetimes com fuso horário** → "safeCastDatetimeBR"
+- **Percentuais** → "normalizePercent"
+- **Campos com números inteiros misturados com texto** → "extractInteger"
+- **Se nenhuma função se aplica** (ex: RECORD, BYTES, campos já tipados) → "none"
+- **Analise a AMOSTRA para decidir** — se a amostra mostra "Sim"/"Não", use castBoolean mesmo que o tipo original seja STRING
+"""
 
 
 # ---------------------------------------------------------------
 # Prompt base de sistema (incorpora regras do prompt.md)
 # ---------------------------------------------------------------
 
-SYSTEM_PROMPT = """Você é um especialista em Data Governance e Engenharia de Dados com profundo conhecimento em:
+SYSTEM_PROMPT = f"""Você é um especialista em Data Governance e Engenharia de Dados com profundo conhecimento em:
 - BigQuery, Dataform, arquitetura Medallion
 - Data Catalog e metadata management
 - Identificação de PII e classificação de sensibilidade
@@ -26,38 +66,58 @@ SYSTEM_PROMPT = """Você é um especialista em Data Governance e Engenharia de D
 
 Seu objetivo é analisar schemas de tabelas e retornar metadata enriquecida.
 
-## PADRÃO DE PREFIXOS (use para inferir semântica de colunas sem descrição explícita)
+## DADOS DE AMOSTRA
+Você receberá uma pequena amostra dos dados (JSON) para ajudar na identificação:
+- Do tipo real dos dados (ex: se uma STRING contém JSON, DATA ou UUID)
+- Do significado semântico (ex: se uma coluna 'TP' contém 'PESSOA' ou 'EMPRESA')
+- De sensibilidade (ex: detectar CPFs, E-mails ou Telefones na amostra)
 
-| Prefixo | Significado      | Tipo BQ             |
-|---------|-----------------|---------------------|
-| CD      | Código / ID      | STRING / INT        |
-| ID      | Identificador    | UUID / STRING / INT |
-| NO      | Nome            | STRING              |
-| DE      | Descrição        | STRING              |
-| DT      | Data            | DATETIME / DATE     |
-| VL      | Valor Monetário  | NUMERIC / DECIMAL   |
-| QT      | Quantidade       | INTEGER             |
-| TP      | Tipo / Categoria | STRING              |
-| PC      | Porcentagem      | NUMERIC / FLOAT     |
-| IS      | Booleano         | BOOLEAN             |
+## PADRÃO DE PREFIXOS — REGRAS DE TAXONOMIA
+
+Você DEVE sugerir o prefixo mais adequado para CADA coluna. Use a tabela abaixo:
+
+| Prefixo | Significado      | Quando usar                                           |
+|---------|-----------------|-------------------------------------------------------|
+| CD      | Código / ID      | Códigos internos, chaves de negócio, IDs numéricos    |
+| ID      | Identificador    | UUIDs, identificadores únicos de sistema              |
+| NO      | Nome            | Nomes de pessoas, empresas, sistemas                  |
+| DE      | Descrição        | Textos descritivos, observações, campos livres        |
+| DT      | Data            | Datas, timestamps, datetimes                          |
+| VL      | Valor Monetário  | Valores em R$, custos, preços                         |
+| QT      | Quantidade       | Contadores, quantidades numéricas                     |
+| TP      | Tipo / Categoria | Enumerações, categorias, tipos                        |
+| PC      | Porcentagem      | Percentuais, taxas                                    |
+| IS      | Booleano         | Flags, indicadores, sim/não, ativo/inativo            |
+
+**REGRAS IMPORTANTES para suggested_prefix:**
+- Analise a AMOSTRA DE DADOS para decidir o prefixo correto
+- CNPJ, CPF → use "CD" (é um código, não uma descrição)
+- Campos como "PROCESSO_ATIVO", "FLAG_*" → use "IS" (é booleano)
+- Campos como "IDREGISTRO" → use "ID" (é identificador)
+- Campos como "STATUS", "FASE_*" → use "TP" (é tipo/categoria)
+- Se a coluna já tem prefixo válido (CD_, ID_, etc.), mantenha-o
+
+{UTILS_FUNCTIONS_CATALOG}
 
 ## FORMATO DE SAÍDA OBRIGATÓRIO
 Retorne APENAS JSON válido, sem markdown, sem explicações extras:
 
-{
+{{
   "domain": "<domínio de negócio>",
   "table_description": "<descrição clara e técnica da tabela>",
   "tags": ["<tag1>", "<tag2>"],
   "sensitivity": "<low|medium|high>",
   "columns": [
-    {
-      "name": "<nome>",
+    {{
+      "name": "<nome_original_da_coluna>",
       "description": "<descrição>",
+      "suggested_prefix": "<CD|ID|NO|DE|DT|VL|QT|TP|PC|IS>",
+      "suggested_function": "<cleanString|removeSpecialChars|removeAccents|normalizePercent|cleanEmail|castBoolean|castMoneyBRL|extractInteger|safeCastDate|normalizeExcelDate|safeCastDatetimeBR|none>",
       "pii": <true|false>,
       "sensitivity": "<low|medium|high>"
-    }
+    }}
   ]
-}"""
+}}"""
 
 
 def build_enrichment_prompt(
@@ -85,7 +145,16 @@ def build_enrichment_prompt(
 
     cols_str = "\n".join(col_lines)
 
+    # Amostra de dados (se disponível)
+    sample_str = "N/A"
+    if schema.sample_data:
+        sample_str = json.dumps(schema.sample_data, indent=2, ensure_ascii=False)
+
     user_content = f"""Analise a seguinte tabela e retorne a metadata enriquecida conforme o formato solicitado.
+Use a amostra de dados fornecida para validar tipos de dados, identificar padrões e inferir o significado de colunas obscuras.
+IMPORTANTE: Para cada coluna, sugira:
+1. O prefixo de taxonomia mais adequado no campo "suggested_prefix"
+2. A função utils.js mais adequada no campo "suggested_function"
 
 Tabela: {schema.table_name}
 Banco/Origem: {schema.db or 'desconhecido'}
@@ -94,36 +163,14 @@ Total de linhas: {schema.row_count:,}
 Colunas:
 {cols_str}
 
+Amostra de dados (primeiras {len(schema.sample_data)} linhas):
+```json
+{sample_str}
+```
+
 Retorne APENAS o JSON de metadata, sem nenhum texto adicional."""
 
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_content},
-    ]
-
-
-def build_docs_prompt(schema: TableSchema, ai_metadata: dict) -> list[dict]:
-    """Constrói prompt para geração de documentação Markdown."""
-    system = "Você é um technical writer especialista em documentação de dados. Escreva em português do Brasil."
-
-    user = f"""Gere uma documentação técnica no formato Markdown para a tabela abaixo.
-
-Tabela: {schema.table_name}
-Domínio: {ai_metadata.get('domain', 'N/A')}
-Descrição: {ai_metadata.get('table_description', 'N/A')}
-
-Colunas com metadata:
-{json.dumps(ai_metadata.get('columns', []), indent=2, ensure_ascii=False)}
-
-A documentação deve incluir:
-1. Título e descrição
-2. Tabela de colunas (Nome | Tipo | PII | Descrição)
-3. Tags e domínio
-4. Observações de governança
-
-Retorne apenas o Markdown, sem blocos de código ao redor."""
-
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
     ]
