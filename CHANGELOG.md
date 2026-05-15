@@ -5,6 +5,18 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 e este projeto adere ao [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-05-15
+
+### Adicionado
+- **Validação de API Key:** O menu interativo agora verifica proativamente se a chave do OpenRouter está configurada antes de iniciar a geração com IA.
+- **Feedback de Inicialização:** Novo prompt interativo no comando `init` para inserção imediata do token de IA.
+
+### Corrigido
+- **Filtro de Placeholder de API:** O sistema agora detecta e ignora chaves de exemplo (como `sk-or-v1-...`) vindas do ambiente, garantindo que o fallback para `api_key.txt` funcione mesmo com arquivos `.env` antigos presentes.
+- **Fim do Delay de Processamento:** O status de carregamento agora aparece instantaneamente após a resposta do usuário no menu, eliminando o vácuo de espera.
+- **Simplificação de Configuração:** Remoção da dependência de arquivos `.env` para chaves de API, centralizando no `api_key.txt` para maior simplicidade.
+- **Silenciamento de Logs:** Redução de ruído visual no terminal através do silenciamento de avisos redundantes do cliente de IA.
+
 ## [1.1.0] - 2026-05-15
 
 ### Adicionado

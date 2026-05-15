@@ -148,13 +148,7 @@ def init_project():
     from rich.prompt import Prompt
     api_key_input = Prompt.ask("\n[bold cyan]🧠 Insira seu token do OpenRouter[/bold cyan] [dim](Opcional: pressione Enter para ignorar)[/dim]", default="")
     
-    env_content = f"OPENROUTER_API_KEY={api_key_input}\n" if api_key_input else "OPENROUTER_API_KEY=sk-or-v1-...\n"
     txt_content = f"{api_key_input}\n" if api_key_input else "cole-aqui-seu-token-do-openrouter\n"
-
-    env_file = Path(".env")
-    if not env_file.exists():
-        env_file.write_text(env_content, encoding="utf-8")
-        console.print("  [green]✓[/green] Arquivo .env criado")
 
     txt_key_file = Path("api_key.txt")
     if not txt_key_file.exists():
@@ -288,7 +282,15 @@ def _interactive_menu():
             if layer in ("silver", "both"):
                 use_ai = Confirm.ask("🧠 Enriquecer metadados com IA (OpenRouter)?", default=True)
                 if use_ai:
-                    force = Confirm.ask("🔄 Forçar nova análise [dim](ignorar cache existente)[/dim]?", default=False)
+                    # Check if API key exists
+                    from src.ai.openrouter_client import OpenRouterClient
+                    temp_client = OpenRouterClient()
+                    if not temp_client.api_key or "cole-aqui" in temp_client.api_key:
+                        console.print("\n[bold yellow]⚠️  AVISO: Chave do OpenRouter não encontrada![/bold yellow]")
+                        console.print("[dim]A IA será desativada. Para ativar, coloque seu token no arquivo [bold]api_key.txt[/bold][/dim]\n")
+                        use_ai = False
+                    else:
+                        force = Confirm.ask("🔄 Forçar nova análise [dim](ignorar cache existente)[/dim]?", default=False)
             
             console.print()
             generate(input=input_path, output=None, db=None, layer=layer, ai=use_ai, force=force)
@@ -349,10 +351,8 @@ def generate(
         else:
             paths_to_process = [config.paths.parquet_input]
 
-    from src.extractor.schema_extractor import extract_all_schemas
-    resolved = _resolve_inputs(paths_to_process, config.paths.parquet_input)
-    
-    with console.status("[bold cyan]Extraindo schemas dos arquivos...[/bold cyan]", spinner="dots"):
+    with console.status("[bold cyan]Preparando e resolvendo caminhos...[/bold cyan]", spinner="dots"):
+        resolved = _resolve_inputs(paths_to_process, config.paths.parquet_input)
         schemas = extract_all_schemas(resolved)
 
     if not schemas:

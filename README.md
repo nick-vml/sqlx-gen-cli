@@ -13,9 +13,9 @@ Este framework é distribuído como um pacote Python nativo.
 ### Opção 1: Instalação direta via Git (Recomendado para usuários)
 Escolha uma das opções abaixo para instalar ou atualizar:
 
-**Versão estável específica (v1.1.0):**
+**Versão estável específica (v1.1.1):**
 ```bash
-pip install git+https://github.com/nick-vml/sqlx-gen-cli.git@v1.1.0
+pip install git+https://github.com/nick-vml/sqlx-gen-cli.git@v1.1.1
 ```
 
 **Versão mais recente da branch principal (Main):**

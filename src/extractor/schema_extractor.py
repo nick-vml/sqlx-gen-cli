@@ -1,5 +1,5 @@
 """
-src/parquet/schema_extractor.py
+src/extractor/schema_extractor.py
 --------------------------------
 Extrai schema de arquivos .parquet de:
   - Caminhos locais  (ex: ./parquet/clientes.parquet)

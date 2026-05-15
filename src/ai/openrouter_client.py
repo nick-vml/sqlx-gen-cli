@@ -50,6 +50,11 @@ class OpenRouterClient:
         timeout: int = 60,
     ):
         self.api_key = api_key or os.getenv(api_key_env, "")
+        
+        # Se a chave for apenas o placeholder do .env, ignoramos para tentar o fallback
+        if self.api_key and "sk-or-v1-..." in self.api_key:
+            self.api_key = ""
+
         if not self.api_key:
             # Fallback para api_key.txt
             txt_path = Path("api_key.txt")
@@ -59,7 +64,8 @@ class OpenRouterClient:
                     self.api_key = key
                     
         if not self.api_key:
-            log.warning(f"⚠️  {api_key_env} ou api_key.txt não definida — chamadas AI desativadas.")
+            # Mantemos o log como debug para não sujar o menu interativo; o chamador (CLI) decide se avisa o usuário.
+            log.debug(f"{api_key_env} ou api_key.txt não definida.")
 
         self.primary_model = primary_model
         self.fallback_models = fallback_models or []
