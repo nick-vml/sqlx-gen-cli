@@ -351,6 +351,7 @@ def generate(
         else:
             paths_to_process = [config.paths.parquet_input]
 
+    from src.extractor.schema_extractor import extract_all_schemas
     with console.status("[bold cyan]Preparando e resolvendo caminhos...[/bold cyan]", spinner="dots"):
         resolved = _resolve_inputs(paths_to_process, config.paths.parquet_input)
         schemas = extract_all_schemas(resolved)
