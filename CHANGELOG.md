@@ -5,6 +5,18 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 e este projeto adere ao [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-05-15
+
+### Adicionado
+- **Integração com Dataform `utils.js`**: O gerador Silver agora aplica funções auxiliares (ex: `cleanString`, `normalizePercent`, `safeCastDate`) sugeridas pela IA ou via mapeamento manual.
+- **Deduplicação Automática**: Implementação de lógica de deduplicação no template Silver utilizando a data extraída do `_FILE_NAME`.
+- **Coluna de Auditoria (`DT_UPDATED`)**: Inclusão automática de metadados de processamento em todas as tabelas Silver.
+- **Descrições Inteligentes**: Fallback automático para geração de descrições amigáveis baseadas na taxonomia (ex: `VL_...` vira "Valor monetário de...").
+
+### Alterado
+- **Taxonomia Inteligente (Prioridade IA)**: A lógica de prefixos agora prioriza sugestões da IA e possui regras aprimoradas para evitar nomes redundantes (ex: `DT_DATA_...` vira apenas `DT_...`).
+- **Template Silver Robusto**: O template SQLX foi reestruturado para suportar operações de pré-execução (`pre_operations`) e filtros de janela temporal (`lookback_days`).
+
 ## [1.1.2] - 2026-05-15
 
 ### Corrigido

@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="sqlx_gen",
-    version="1.1.2",
+    version="1.2.0",
     description="Framework de geração automática de SQLX para Dataform/BigQuery",
     author="VML",
     packages=find_packages(include=["src", "src.*"]),

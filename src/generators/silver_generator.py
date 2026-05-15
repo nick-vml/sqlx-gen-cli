@@ -70,7 +70,8 @@ WITH {{ db }}_{{ name }} AS (
 
 SELECT
 {{ select_block }},
-  PARSE_DATETIME("%Y_%m_%d_%H_%M", REGEXP_EXTRACT(_FILE_NAME, r"\\\\d{4}_\\\\d{2}_\\\\d{2}_\\\\d{2}_\\\\d{2}")) AS DT_UPDATED
+  PARSE_DATETIME("%Y_%m_%d_%H_%M", REGEXP_EXTRACT(_FILE_NAME, r"\\d{4}_\\d{2}_\\d{2}_\\d{2}_\\d{2}")) AS DT_UPDATED
+  
 FROM {{ db }}_{{ name }}
 """
 

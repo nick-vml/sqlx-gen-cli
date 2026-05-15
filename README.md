@@ -13,9 +13,9 @@ Este framework é distribuído como um pacote Python nativo.
 ### Opção 1: Instalação direta via Git (Recomendado para usuários)
 Escolha uma das opções abaixo para instalar ou atualizar:
 
-**Versão estável específica (v1.1.2):**
+**Versão estável específica (v1.2.0):**
 ```bash
-pip install git+https://github.com/nick-vml/sqlx-gen-cli.git@v1.1.2
+pip install git+https://github.com/nick-vml/sqlx-gen-cli.git@v1.2.0
 ```
 
 **Versão mais recente da branch principal (Main):**
@@ -77,8 +77,9 @@ Isso abrirá um menu visual onde você poderá:
 
 O Dataform Forge não apenas renomeia colunas, ele entende os dados:
 1. **Limpeza de Redundância**: Se uma coluna se chama `DATA_NASCIMENTO`, o sistema remove o prefixo redundante e aplica a taxonomia correta, resultando em `DT_NASCIMENTO` (em vez de `DT_DATA_NASCIMENTO`).
-2. **OpenRouter Integration**: Utiliza modelos de ponta (como Claude 3.5 Sonnet) para inferir descrições de negócio, detectar dados sensíveis (LGPD) e sugerir casts de tipos complexos.
-3. **Fallback Seguro**: Caso não existam variáveis de ambiente, o sistema busca a chave de API no arquivo `api_key.txt` gerado no `init`.
+2. **OpenRouter Integration**: Utiliza modelos de ponta (como Claude 3.5 Sonnet) para inferir descrições de negócio, detectar dados sensíveis (LGPD) e sugerir funções de limpeza do `utils.js` (ex: `cleanString`, `normalizePercent`).
+3. **Deduplicação e Auditoria**: O gerador Silver cria automaticamente colunas de controle (`DT_UPDATED`) e lógica de deduplicação baseada no timestamp dos arquivos de origem.
+4. **Fallback Seguro**: Caso não existam variáveis de ambiente, o sistema busca a chave de API no arquivo `api_key.txt` gerado no `init`.
 
 ---
 
