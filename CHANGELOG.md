@@ -5,6 +5,11 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 e este projeto adere ao [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-05-15
+
+### Corrigido
+- **Erro de Referência:** Correção de `NameError` ao tentar executar a extração de schemas devido a um import ausente no comando `generate`.
+
 ## [1.1.1] - 2026-05-15
 
 ### Adicionado
