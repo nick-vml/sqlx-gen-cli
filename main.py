@@ -145,10 +145,21 @@ def init_project():
         glossary_file.write_text("{}\n", encoding="utf-8")
         console.print("  [green]✓[/green] Arquivo glossario.json criado")
 
+    from rich.prompt import Prompt
+    api_key_input = Prompt.ask("\n[bold cyan]🧠 Insira seu token do OpenRouter[/bold cyan] [dim](Opcional: pressione Enter para ignorar)[/dim]", default="")
+    
+    env_content = f"OPENROUTER_API_KEY={api_key_input}\n" if api_key_input else "OPENROUTER_API_KEY=sk-or-v1-...\n"
+    txt_content = f"{api_key_input}\n" if api_key_input else "cole-aqui-seu-token-do-openrouter\n"
+
     env_file = Path(".env")
     if not env_file.exists():
-        env_file.write_text('OPENROUTER_API_KEY=sk-or-v1-...\n', encoding="utf-8")
+        env_file.write_text(env_content, encoding="utf-8")
         console.print("  [green]✓[/green] Arquivo .env criado")
+
+    txt_key_file = Path("api_key.txt")
+    if not txt_key_file.exists():
+        txt_key_file.write_text(txt_content, encoding="utf-8")
+        console.print("  [green]✓[/green] Arquivo api_key.txt criado")
 
     console.print("\n[bold green]Projeto inicializado com sucesso![/bold green]")
 
@@ -251,9 +262,9 @@ def _interactive_menu():
     
     while True:
         menu_text = (
-            "[bold cyan]1.[/bold cyan] [green]🚀 Gerar Pipelines[/green] [dim](Cria arquivos SQLX Bronze e Silver)[/dim]\n"
-            "[bold cyan]2.[/bold cyan] [blue]🔍 Inferir Schemas[/blue] [dim](Extrai JSON de arquivos Parquet/CSV)[/dim]\n"
-            "[bold cyan]3.[/bold cyan] [yellow]✅ Validar SQLX[/yellow]   [dim](Verifica integridade e erros de sintaxe)[/dim]\n"
+            "[bold cyan]1.[/bold cyan] [green]🚀 Gerar SQLX[/green] [dim](Cria arquivos Bronze e Silver)[/dim]\n"
+            "[dim]2. 🔍 Inferir Schemas (Inativo)[/dim]\n"
+            "[dim]3. ✅ Validar SQLX (Inativo)[/dim]\n"
             "[bold cyan]4.[/bold cyan] [red]🚪 Sair[/red]"
         )
         
@@ -282,20 +293,8 @@ def _interactive_menu():
             console.print()
             generate(input=input_path, output=None, db=None, layer=layer, ai=use_ai, force=force)
             
-        elif choice == "2":
-            console.print("\n[bold cyan]─ Inferência de Schemas ─[/bold cyan]")
-            p = Prompt.ask("📂 Caminho origem [dim](Local ou gs://)[/dim]", default="./files")
-            out = Prompt.ask("💾 Diretório destino", default="./generated/metadata")
-            
-            console.print()
-            infer_schema(input=[p], output=out)
-            
-        elif choice == "3":
-            console.print("\n[bold cyan]─ Validação de Código ─[/bold cyan]")
-            d = Prompt.ask("📂 Diretório dos arquivos SQLX", default="./generated/silver")
-            
-            console.print()
-            validate(directory=d)
+        elif choice in ("2", "3"):
+            console.print("\n[yellow]⚠️  Esta funcionalidade está temporariamente inativa![/yellow]")
 
         if not Confirm.ask("\n[bold magenta]Deseja realizar outra operação?[/bold magenta]", default=True):
             console.print("\n[dim]Encerrando o gerador... Até logo! 👋[/dim]")
@@ -327,7 +326,6 @@ def generate(
       python main.py generate --input gs://bucket/rfb/ --force
       python main.py generate --input gs://bucket/a.csv --input gs://bucket/b.json --cache
     """
-    _banner()
     config_path = _ensure_config()
     config = load_config(config_path)
 
@@ -448,7 +446,6 @@ def infer_schema(
       python main.py infer-schema --input gs://bucket/dados/
       python main.py infer-schema --input gs://bucket/rfb/empresas.parquet --input gs://bucket/rfb/socios.parquet
     """
-    _banner()
     _ensure_config()
     from src.extractor.schema_extractor import extract_all_schemas, save_schema_json
 
@@ -505,7 +502,6 @@ def validate(
     Exemplos:
       python main.py validate --dir ./generated/silver
     """
-    _banner()
     console.rule("[bold cyan]Validando arquivos SQLX[/bold cyan]")
 
     sqlx_dir = Path(directory)
@@ -589,7 +585,6 @@ def generate_docs(
       python main.py generate-docs --input gs://bucket/dados/
       python main.py generate-docs --force
     """
-    _banner()
     
     config_path = _ensure_config()
     config = load_config(config_path)

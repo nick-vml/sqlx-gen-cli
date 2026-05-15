@@ -1,3 +1,4 @@
 [
-    "gs://vml_stg_gcp/iilex/processos_com_bloqueio/date=2026-05-14/processos_com_bloqueio_2026_05_14_15_23_49.parquet"
+    "gs://vml_stg_gcp/iilex/processos_com_bloqueio/date=2026-05-14/processos_com_bloqueio_2026_05_14_15_23_49.parquet",
+    "gs://vml_stg_gcp/iilex/bloqueios/date=2026-05-14/bloqueios_2026_05_14_17_45_22.parquet"
 ]

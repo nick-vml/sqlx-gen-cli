@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 from openai import OpenAI, APIError, RateLimitError, APITimeoutError
@@ -50,7 +51,15 @@ class OpenRouterClient:
     ):
         self.api_key = api_key or os.getenv(api_key_env, "")
         if not self.api_key:
-            log.warning(f"⚠️  {api_key_env} não definida — chamadas AI desativadas.")
+            # Fallback para api_key.txt
+            txt_path = Path("api_key.txt")
+            if txt_path.exists():
+                key = txt_path.read_text(encoding="utf-8").strip()
+                if key and "cole-aqui" not in key.lower():
+                    self.api_key = key
+                    
+        if not self.api_key:
+            log.warning(f"⚠️  {api_key_env} ou api_key.txt não definida — chamadas AI desativadas.")
 
         self.primary_model = primary_model
         self.fallback_models = fallback_models or []
