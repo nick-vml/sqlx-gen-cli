@@ -15,7 +15,7 @@ Escolha uma das opções abaixo para instalar ou atualizar:
 
 **Versão estável específica (v1.1.0):**
 ```bash
-pip install --upgrade git+https://github.com/nick-vml/sqlx-gen-cli.git@v1.1.0
+pip install git+https://github.com/nick-vml/sqlx-gen-cli.git@v1.1.0
 ```
 
 **Versão mais recente da branch principal (Main):**
@@ -23,9 +23,14 @@ pip install --upgrade git+https://github.com/nick-vml/sqlx-gen-cli.git@v1.1.0
 pip install --upgrade git+https://github.com/nick-vml/sqlx-gen-cli.git@main
 ```
 
-**Forçar atualização completa:**
+**Forçar atualização completa (Reinstala tudo):**
 ```bash
-pip install --upgrade --force-reinstall git+https://github.com/nick-vml/sqlx-gen-cli.git
+pip install --upgrade --force-reinstall git+https://github.com/nick-vml/sqlx-gen-cli.git@main
+```
+
+**Atualização rápida (Apenas código, muito mais rápido):**
+```bash
+pip install --upgrade --no-deps git+https://github.com/nick-vml/sqlx-gen-cli.git@main
 ```
 
 ### Opção 2: Instalação local (Para desenvolvimento)
