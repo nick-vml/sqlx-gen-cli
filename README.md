@@ -1,6 +1,6 @@
-# Dataform Forge CLI 🔨
+# SQLX Gen🔨
 
-O **Dataform Forge** é um framework de linha de comando (CLI) premium desenhado para acelerar, padronizar e automatizar a criação de pipelines e documentações dentro do ecossistema Google Cloud Dataform / BigQuery.
+O **SQLX Gen** é um framework de linha de comando (CLI) premium desenhado para acelerar, padronizar e automatizar a criação de pipelines e documentações dentro do ecossistema Google Cloud Dataform / BigQuery.
 
 Ele ingere arquivos brutos (**Parquet, CSV, JSON, NDJSON**) locais ou no GCS, extrai schemas instantaneamente e "forja" as camadas Bronze e Silver do Dataform, aplicando **Taxonomias** rigorosas de engenharia de dados (ex: `CD_`, `DT_`, `VL_`) e enriquecendo metadados usando **Inteligência Artificial (OpenRouter)**.
 
@@ -69,13 +69,12 @@ Isso abrirá um menu visual onde você poderá:
 - **`sqlx_gen`**: Abre o menu interativo principal.
 - **`sqlx_gen init`**: Prepara o diretório de trabalho.
 - **`sqlx_gen generate`**: Comando direto para geração de arquivos (ver `--help`).
-- **`sqlx_gen generate-docs`**: Gera documentação técnica em Markdown baseada nos metadados extraídos.
 
 ---
 
 ## 🧠 Inteligência Artificial & Taxonomia
 
-O Dataform Forge não apenas renomeia colunas, ele entende os dados:
+O SQLX Gen não apenas renomeia colunas, ele entende os dados:
 1. **Limpeza de Redundância**: Se uma coluna se chama `DATA_NASCIMENTO`, o sistema remove o prefixo redundante e aplica a taxonomia correta, resultando em `DT_NASCIMENTO` (em vez de `DT_DATA_NASCIMENTO`).
 2. **OpenRouter Integration**: Utiliza modelos de ponta (como Claude 3.5 Sonnet) para inferir descrições de negócio, detectar dados sensíveis (LGPD) e sugerir funções de limpeza do `utils.js` (ex: `cleanString`, `normalizePercent`).
 3. **Deduplicação e Auditoria**: O gerador Silver cria automaticamente colunas de controle (`DT_UPDATED`) e lógica de deduplicação baseada no timestamp dos arquivos de origem.
