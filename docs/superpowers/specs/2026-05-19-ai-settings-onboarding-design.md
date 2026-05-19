@@ -76,12 +76,13 @@ Fora do escopo: refactor dos geradores Bronze/Silver, mudanças na extração de
 
 **`src/ai/openrouter_client.py`**
 - Remove fallback `api_key.txt`
-- Remove parâmetro `api_key_env`
-- Construtor simplificado: `__init__(self, api_key: str, primary_model: str, fallback_models, max_retries, timeout)`
-- Se `api_key` for vazio/None, retorna `AIResponse` vazio imediatamente sem logar erro
+- Mantém leitura de `OPENROUTER_API_KEY` como fallback secundário
+- Prioridade: `api_key` passado diretamente (de `ai_settings.json`) > `OPENROUTER_API_KEY` (env var) > vazio (IA desabilitada)
+- Construtor: `__init__(self, api_key: str | None, primary_model: str, fallback_models, max_retries, timeout)`
+- Se `api_key` for vazio/None após resolver todas as fontes, retorna `AIResponse` vazio imediatamente sem logar erro
 
 **`main.py`**
-- Remove `load_dotenv()` e import `dotenv`
+- Mantém `load_dotenv()` para suporte à variável `OPENROUTER_API_KEY` via `.env`
 - Remove todo o código de `api_key.txt` no `init_project()`
 - Adiciona `_check_first_run()` chamado no início de qualquer comando que precise de config
 - `init_project()` chama `run_onboarding_wizard()` ao invés de criar `api_key.txt`
@@ -104,15 +105,19 @@ _check_first_run()
          ↓
 config/ai_settings.json existe?
    NÃO → run_onboarding_wizard() → salva ai_settings.json → continua
-   SIM → load_ai_settings() → continua
+   SIM → continua
          ↓
 load_config(generator.yaml) → GeneratorConfig
-         ↓
 load_ai_settings() → AISettings
+         ↓
+Resolução da API key:
+   ai_settings.api_key (se preenchido)
+   → senão: os.getenv("OPENROUTER_API_KEY")  ← via .env ou env real
+   → senão: IA desabilitada
          ↓
 MetadataManager(config, ai_settings)
          ↓
-OpenRouterClient(api_key=ai_settings.api_key, ...)
+OpenRouterClient(api_key=resolved_key, ...)
 ```
 
 ---
@@ -193,7 +198,8 @@ Se o usuário pular a API key:
 - `api_key` usa `Field(repr=False)` no Pydantic para não aparecer em logs/repr
 - `config/ai_settings.json` adicionado ao `.gitignore` no wizard E no `init`
 - Se `ai_settings.json` não for encontrado, a IA é desabilitada silenciosamente (sem crash)
-- Sem fallback para variáveis de ambiente ou arquivos alternativos — uma fonte de verdade
+- `OPENROUTER_API_KEY` é mantida como fallback; `.env` continua suportado via `load_dotenv()`
+- Prioridade explícita e documentada: `ai_settings.json` > `OPENROUTER_API_KEY` > desabilitado
 
 ---
 
