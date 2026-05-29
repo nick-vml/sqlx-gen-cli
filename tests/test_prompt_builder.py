@@ -20,3 +20,13 @@ def test_transpose_sample_missing_keys():
     result = _transpose_sample(sample)
     assert result["a"] == [1, 3]
     assert result["b"] == [2]
+
+
+def test_transpose_sample_preserves_row_order():
+    sample = [
+        {"col": "primeiro"},
+        {"col": "segundo"},
+        {"col": "terceiro"},
+    ]
+    result = _transpose_sample(sample)
+    assert result["col"] == ["primeiro", "segundo", "terceiro"]

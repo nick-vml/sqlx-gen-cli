@@ -9,13 +9,14 @@ e o catálogo de funções utils.js do Dataform como contexto base.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from src.extractor.schema_extractor import TableSchema
 
 
-def _transpose_sample(sample_data: list[dict]) -> dict[str, list]:
+def _transpose_sample(sample_data: list[dict[str, Any]]) -> dict[str, list[Any]]:
     """Transpõe [{col: val, ...}, ...] em {col: [val1, val2, ...], ...}."""
-    result: dict[str, list] = {}
+    result: dict[str, list[Any]] = {}
     for row in sample_data:
         for key, value in row.items():
             result.setdefault(key, []).append(value)
