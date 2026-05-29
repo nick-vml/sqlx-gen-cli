@@ -1,5 +1,5 @@
 import pytest
-from src.ai.prompt_builder import _transpose_sample
+from src.ai.prompt_builder import _transpose_sample, _detect_hints
 
 
 def test_transpose_sample_basic():
@@ -30,3 +30,109 @@ def test_transpose_sample_preserves_row_order():
     ]
     result = _transpose_sample(sample)
     assert result["col"] == ["primeiro", "segundo", "terceiro"]
+
+
+# ---------------------------------------------------------------------------
+# _detect_hints
+# ---------------------------------------------------------------------------
+
+# CPF
+def test_detect_hints_cpf():
+    samples = ["123.456.789-00", "987.654.321-01"]
+    assert "CPF" in _detect_hints("numero_cpf", samples)
+    assert "PII=true" in _detect_hints("numero_cpf", samples)
+    assert "removeSpecialChars" in _detect_hints("numero_cpf", samples)
+
+
+def test_detect_hints_cpf_sem_formatacao():
+    samples = ["12345678900"]
+    # CPF sem pontuação: 11 dígitos — o regex aceita sem pontos/traço
+    hint = _detect_hints("cpf_cliente", samples)
+    assert "CPF" in hint
+
+
+# CNPJ
+def test_detect_hints_cnpj():
+    samples = ["12.345.678/0001-99", "98.765.432/0001-00"]
+    hint = _detect_hints("cnpj_empresa", samples)
+    assert "CNPJ" in hint
+    assert "PII=true" in hint
+
+
+# Email
+def test_detect_hints_email():
+    samples = ["alice@example.com", "bob@corp.com.br"]
+    hint = _detect_hints("email_contato", samples)
+    assert "e-mail" in hint
+    assert "cleanEmail" in hint
+
+
+# JSON estruturado
+def test_detect_hints_json():
+    samples = ['{"tipo": "PF", "renda": 5000}', '{"tipo": "PJ"}']
+    hint = _detect_hints("dados_complementares", samples)
+    assert "JSON estruturado" in hint
+    assert "none" in hint
+
+
+# Booleano
+def test_detect_hints_booleano_sim_nao():
+    samples = ["Sim", "Não", "Sim", "Não"]
+    hint = _detect_hints("ativo", samples)
+    assert "castBoolean" in hint
+
+
+def test_detect_hints_booleano_true_false():
+    samples = ["true", "false", "true"]
+    hint = _detect_hints("flag_ativo", samples)
+    assert "castBoolean" in hint
+
+
+# Monetário BRL
+def test_detect_hints_monetario():
+    samples = ["R$ 1.500,00", "R$ 200,50"]
+    hint = _detect_hints("honorarios", samples)
+    assert "castMoneyBRL" in hint
+
+
+def test_detect_hints_monetario_sem_rs():
+    samples = ["1.500,00", "200,50"]
+    hint = _detect_hints("valor_total", samples)
+    assert "castMoneyBRL" in hint
+
+
+# Data em texto
+def test_detect_hints_data_ddmmaaaa():
+    samples = ["15/03/1985", "22/07/1990"]
+    hint = _detect_hints("data_nascimento", samples)
+    assert "safeCastDate" in hint
+
+
+def test_detect_hints_data_iso():
+    samples = ["1985-03-15", "1990-07-22"]
+    hint = _detect_hints("dt_nascimento", samples)
+    assert "safeCastDate" in hint
+
+
+# Sem hint
+def test_detect_hints_sem_padrao():
+    samples = ["Escritório Central", "Filial Norte", "Matriz"]
+    hint = _detect_hints("descricao_unidade", samples)
+    assert hint == ""
+
+
+# Amostra vazia / apenas nulls
+def test_detect_hints_somente_nulls():
+    assert _detect_hints("qualquer_coluna", [None, None]) == ""
+
+
+def test_detect_hints_lista_vazia():
+    assert _detect_hints("qualquer_coluna", []) == ""
+
+
+# Prioridade: CPF antes de data (CPF tem dígitos que poderiam parecer data)
+def test_detect_hints_cpf_priority_over_date():
+    samples = ["123.456.789-00"]
+    hint = _detect_hints("documento", samples)
+    assert "CPF" in hint
+    assert "safeCastDate" not in hint

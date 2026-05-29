@@ -9,6 +9,7 @@ e o catálogo de funções utils.js do Dataform como contexto base.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from src.extractor.schema_extractor import TableSchema
@@ -21,6 +22,56 @@ def _transpose_sample(sample_data: list[dict[str, Any]]) -> dict[str, list[Any]]
         for key, value in row.items():
             result.setdefault(key, []).append(value)
     return result
+
+
+_CPF_RE = re.compile(r'^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$')
+_CNPJ_RE = re.compile(r'^\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}$')
+_EMAIL_RE = re.compile(r'\S+@\S+\.\S+')
+_MONEY_RE = re.compile(r'R\$|\d{1,3}(\.\d{3})*,\d{2}')
+_DATE_RE = re.compile(r'\b(\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})\b')
+_BOOL_VALUES = {"sim", "não", "nao", "s", "n", "true", "false", "ativo", "inativo", "0", "1"}
+
+
+def _detect_hints(_col_name: str, sample_values: list[Any]) -> str:
+    """Detecta padrões na amostra e retorna um hint para o prompt da IA."""
+    non_null = [str(v) for v in sample_values if v is not None]
+    if not non_null:
+        return ""
+
+    # CPF — prioridade 1
+    if any(_CPF_RE.match(v.strip()) for v in non_null):
+        return "[HINT: padrão CPF → PII=true, suggested_function: removeSpecialChars]"
+
+    # CNPJ — prioridade 2
+    if any(_CNPJ_RE.match(v.strip()) for v in non_null):
+        return "[HINT: padrão CNPJ → PII=true, suggested_function: removeSpecialChars]"
+
+    # Email
+    if any(_EMAIL_RE.search(v) for v in non_null):
+        return "[HINT: e-mail detectado → PII=true, suggested_function: cleanEmail]"
+
+    # JSON estruturado
+    for v in non_null:
+        try:
+            parsed = json.loads(v)
+            if isinstance(parsed, (dict, list)):
+                return "[HINT: STRING contém JSON estruturado → descrever campos internos se possível, suggested_function: none]"
+        except (ValueError, TypeError):
+            pass
+
+    # Booleano texto — todos os não-nulos devem ser valores booleanos
+    if all(v.strip().lower() in _BOOL_VALUES for v in non_null):
+        return "[HINT: booleano → suggested_function: castBoolean]"
+
+    # Monetário BRL
+    if any(_MONEY_RE.search(v) for v in non_null):
+        return "[HINT: valor monetário BRL → suggested_function: castMoneyBRL]"
+
+    # Data em texto
+    if any(_DATE_RE.search(v) for v in non_null):
+        return "[HINT: data em texto → suggested_function: safeCastDate]"
+
+    return ""
 
 
 # ---------------------------------------------------------------
