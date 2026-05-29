@@ -13,6 +13,15 @@ import json
 from src.extractor.schema_extractor import TableSchema
 
 
+def _transpose_sample(sample_data: list[dict]) -> dict[str, list]:
+    """Transpõe [{col: val, ...}, ...] em {col: [val1, val2, ...], ...}."""
+    result: dict[str, list] = {}
+    for row in sample_data:
+        for key, value in row.items():
+            result.setdefault(key, []).append(value)
+    return result
+
+
 # ---------------------------------------------------------------
 # Catálogo de funções utils.js do Dataform
 # ---------------------------------------------------------------
