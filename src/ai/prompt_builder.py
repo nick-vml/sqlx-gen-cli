@@ -189,30 +189,40 @@ def build_enrichment_prompt(
     Constrói a lista de mensagens para a API OpenRouter.
 
     Args:
-        schema: Schema da tabela extraído do Parquet.
+        schema: Schema da tabela extraído do Parquet/CSV/JSON.
         glossary: Glossário de descrições de colunas conhecidas.
 
     Returns:
         Lista de dicts no formato OpenAI messages.
     """
     glossary = glossary or {}
+    transposed = _transpose_sample(schema.sample_data)
 
-    # Monta lista de colunas com descrições já conhecidas
     col_lines: list[str] = []
     for col in schema.columns:
         known_desc = glossary.get(col.name.upper(), "")
-        hint = f" // Descrição conhecida: {known_desc}" if known_desc else ""
-        col_lines.append(f"  - {col.name} ({col.type}, {'nullable' if col.nullable else 'required'}){hint}")
+        desc_hint = f"  // Descrição conhecida: {known_desc}" if known_desc else ""
+
+        samples = transposed.get(col.name, [])
+        sample_repr = json.dumps(samples, ensure_ascii=False) if samples else "N/A"
+        pattern_hint = _detect_hints(col.name, samples)
+
+        line = (
+            f"  - {col.name} ({col.type}, {'nullable' if col.nullable else 'required'}){desc_hint}\n"
+            f"    Amostras: {sample_repr}"
+        )
+        if pattern_hint:
+            line += f"\n    {pattern_hint}"
+
+        col_lines.append(line)
 
     cols_str = "\n".join(col_lines)
 
-    # Amostra de dados (se disponível)
-    sample_str = "N/A"
-    if schema.sample_data:
-        sample_str = json.dumps(schema.sample_data, indent=2, ensure_ascii=False)
-
     user_content = f"""Analise a seguinte tabela e retorne a metadata enriquecida conforme o formato solicitado.
-Use a amostra de dados fornecida para validar tipos de dados, identificar padrões e inferir o significado de colunas obscuras.
+Para cada coluna, os valores de amostra estão listados diretamente abaixo do nome da coluna.
+Use-os para validar tipos, identificar padrões e inferir o significado de campos obscuros.
+Siga os HINTs de pré-análise como forte evidência.
+
 IMPORTANTE: Para cada coluna, sugira:
 1. O prefixo de taxonomia mais adequado no campo "suggested_prefix"
 2. A função utils.js mais adequada no campo "suggested_function"
@@ -223,11 +233,6 @@ Total de linhas: {schema.row_count:,}
 
 Colunas:
 {cols_str}
-
-Amostra de dados (primeiras {len(schema.sample_data)} linhas):
-```json
-{sample_str}
-```
 
 Retorne APENAS o JSON de metadata, sem nenhum texto adicional."""
 

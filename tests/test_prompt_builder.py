@@ -158,3 +158,112 @@ def test_detect_hints_monetario_false_positive():
     # 1000,00 should NOT match — it has 4 digits before comma, which breaks the pattern
     # The fix uses (?<!\d)\d{1,3} so "1000,00" should not be detected
     assert "castMoneyBRL" not in hint
+
+
+# ---------------------------------------------------------------------------
+# build_enrichment_prompt integration tests
+# ---------------------------------------------------------------------------
+
+from src.ai.prompt_builder import build_enrichment_prompt
+from src.extractor.schema_extractor import TableSchema, ColumnSchema
+
+
+def _make_schema(columns, sample_data):
+    return TableSchema(
+        table_name="test_table",
+        source_file="test.parquet",
+        db="raw",
+        row_count=100,
+        sample_data=sample_data,
+        columns=[ColumnSchema(name=n, type=t, nullable=True) for n, t in columns],
+    )
+
+
+def test_prompt_contains_column_samples():
+    schema = _make_schema(
+        columns=[("HONORARIOS", "STRING"), ("STATUS", "STRING")],
+        sample_data=[
+            {"HONORARIOS": "1.500,00", "STATUS": "Ativo"},
+            {"HONORARIOS": "2.000,00", "STATUS": "Inativo"},
+        ],
+    )
+    messages = build_enrichment_prompt(schema)
+    user_msg = messages[1]["content"]
+    assert "HONORARIOS" in user_msg
+    assert "1.500,00" in user_msg
+    assert "STATUS" in user_msg
+    assert "Ativo" in user_msg
+
+
+def test_prompt_injects_monetary_hint():
+    schema = _make_schema(
+        columns=[("VALOR_HONORARIOS", "STRING")],
+        sample_data=[
+            {"VALOR_HONORARIOS": "R$ 1.500,00"},
+            {"VALOR_HONORARIOS": "R$ 200,00"},
+        ],
+    )
+    messages = build_enrichment_prompt(schema)
+    user_msg = messages[1]["content"]
+    assert "castMoneyBRL" in user_msg
+
+
+def test_prompt_injects_cpf_hint():
+    schema = _make_schema(
+        columns=[("NUMERO_CPF", "STRING")],
+        sample_data=[
+            {"NUMERO_CPF": "123.456.789-00"},
+            {"NUMERO_CPF": "987.654.321-01"},
+        ],
+    )
+    messages = build_enrichment_prompt(schema)
+    user_msg = messages[1]["content"]
+    assert "CPF" in user_msg
+    assert "PII=true" in user_msg
+
+
+def test_prompt_injects_json_hint():
+    schema = _make_schema(
+        columns=[("DADOS_EXTRAS", "STRING")],
+        sample_data=[
+            {"DADOS_EXTRAS": '{"tipo": "PF", "renda": 5000}'},
+        ],
+    )
+    messages = build_enrichment_prompt(schema)
+    user_msg = messages[1]["content"]
+    assert "JSON estruturado" in user_msg
+
+
+def test_prompt_no_separate_sample_block():
+    schema = _make_schema(
+        columns=[("NOME", "STRING")],
+        sample_data=[{"NOME": "Alice"}],
+    )
+    messages = build_enrichment_prompt(schema)
+    user_msg = messages[1]["content"]
+    # The old separate sample block must be gone
+    assert "primeiras" not in user_msg
+    assert "```json" not in user_msg
+
+
+def test_prompt_no_hint_for_plain_text():
+    schema = _make_schema(
+        columns=[("DESCRICAO", "STRING")],
+        sample_data=[
+            {"DESCRICAO": "Escritório Central"},
+            {"DESCRICAO": "Filial Norte"},
+        ],
+    )
+    messages = build_enrichment_prompt(schema)
+    user_msg = messages[1]["content"]
+    assert "[HINT:" not in user_msg
+
+
+def test_prompt_glossary_hint_included():
+    schema = _make_schema(
+        columns=[("CD_EMPRESA", "STRING")],
+        sample_data=[{"CD_EMPRESA": "001"}],
+    )
+    messages = build_enrichment_prompt(schema, glossary={"CD_EMPRESA": "Código interno da empresa"})
+    user_msg = messages[1]["content"]
+    assert "Código interno da empresa" in user_msg
