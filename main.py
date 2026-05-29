@@ -178,14 +178,14 @@ def _banner():
     title = pyfiglet.figlet_format("SQLX Gen", font="slant")
     
     subtitle = (
-        "[bold magenta]Framework de Geração Autónoma para Dataform & BigQuery[/bold magenta]\n"
+        "Framework de Geração Autónoma para Dataform & BigQuery\n"
         "[dim]Parquet -> Schema -> Bronze -> Silver -> IA -> Docs[/dim]"
     )
-    
+
     panel = Panel(
-        Align.center(f"[cyan]{title}[/cyan]\n{subtitle}"),
-        border_style="cyan",
-        box=box.DOUBLE_EDGE,
+        Align.center(f"[blue]{title}[/blue]\n{subtitle}"),
+        border_style="blue",
+        box=box.ROUNDED,
         padding=(1, 2)
     )
     console.print(panel)
@@ -212,11 +212,11 @@ def _display_drift_report(drift_reports: list[dict]):
         return
 
     console.print()
-    table = Table(title="⚠️  Schema Drift Detectado", border_style="yellow", box=box.MINIMAL_HEAVY_HEAD)
-    table.add_column("Tabela", style="cyan", no_wrap=True)
-    table.add_column("+ Colunas", justify="right", style="bold green")
-    table.add_column("- Colunas", justify="right", style="bold red")
-    table.add_column("Tipo Alterado", justify="right", style="bold yellow")
+    table = Table(title="Schema Drift Detectado", border_style="yellow", box=box.MINIMAL_HEAVY_HEAD)
+    table.add_column("Tabela", style="default", no_wrap=True)
+    table.add_column("+ Colunas", justify="right", style="green")
+    table.add_column("- Colunas", justify="right", style="red")
+    table.add_column("Tipo Alterado", justify="right", style="yellow")
 
     for drift in drifts:
         table.add_row(
@@ -256,22 +256,22 @@ def _interactive_menu():
     
     while True:
         menu_text = (
-            "[bold cyan]1.[/bold cyan] [green]🚀 Gerar SQLX[/green] [dim](Cria arquivos Bronze e Silver)[/dim]\n"
-            "[dim]2. 🔍 Inferir Schemas (Inativo)[/dim]\n"
-            "[dim]3. ✅ Validar SQLX (Inativo)[/dim]\n"
-            "[bold cyan]4.[/bold cyan] [red]🚪 Sair[/red]"
+            "[cyan]1.[/cyan] [green]Gerar SQLX[/green] [dim](Cria arquivos Bronze e Silver)[/dim]\n"
+            "[dim]2. Inferir Schemas (Inativo)[/dim]\n"
+            "[dim]3. Validar SQLX (Inativo)[/dim]\n"
+            "[cyan]4.[/cyan] Sair"
         )
-        
-        console.print(Panel(menu_text, title="[bold]Menu Principal[/bold]", border_style="blue", padding=(1, 2)))
 
-        choice = Prompt.ask("\n[bold]Selecione uma opção[/bold]", choices=["1", "2", "3", "4"], default="1")
+        console.print(Panel(menu_text, title="Menu Principal", border_style="default", padding=(1, 2)))
+
+        choice = Prompt.ask("\nSelecione uma opção", choices=["1", "2", "3", "4"], default="1")
 
         if choice == "4":
             console.print("\n[dim]Encerrando o gerador... Até logo! 👋[/dim]")
             sys.exit(0)
             
         elif choice == "1":
-            console.print("\n[bold cyan]─ Configuração da Geração ─[/bold cyan]")
+            console.print("\n[dim]─ Configuração da Geração ─[/dim]")
             p = Prompt.ask("📂 Caminho do arquivo/pasta [dim](Vazio = usar tabelas.json)[/dim]", default="")
             input_path = [p] if p else []
             layer = Prompt.ask("🛠️  Camadas", choices=["bronze", "silver", "both"], default="both")
@@ -286,8 +286,8 @@ def _interactive_menu():
                     from src.ai.openrouter_client import OpenRouterClient
                     temp_client = OpenRouterClient()
                     if not temp_client.api_key or "cole-aqui" in temp_client.api_key:
-                        console.print("\n[bold yellow]⚠️  AVISO: Chave do OpenRouter não encontrada![/bold yellow]")
-                        console.print("[dim]A IA será desativada. Para ativar, coloque seu token no arquivo [bold]api_key.txt[/bold][/dim]\n")
+                        console.print("\n[yellow]Chave do OpenRouter não encontrada.[/yellow]")
+                        console.print("[dim]A IA será desativada. Para ativar, coloque seu token no arquivo api_key.txt[/dim]\n")
                         use_ai = False
                     else:
                         force = Confirm.ask("🔄 Forçar nova análise [dim](ignorar cache existente)[/dim]?", default=False)
@@ -298,7 +298,7 @@ def _interactive_menu():
         elif choice in ("2", "3"):
             console.print("\n[yellow]⚠️  Esta funcionalidade está temporariamente inativa![/yellow]")
 
-        if not Confirm.ask("\n[bold magenta]Deseja realizar outra operação?[/bold magenta]", default=True):
+        if not Confirm.ask("\nDeseja realizar outra operação?", default=True):
             console.print("\n[dim]Encerrando o gerador... Até logo! 👋[/dim]")
             break
         
@@ -352,7 +352,7 @@ def generate(
             paths_to_process = [config.paths.parquet_input]
 
     from src.extractor.schema_extractor import extract_all_schemas
-    with console.status("[bold cyan]Preparando e resolvendo caminhos...[/bold cyan]", spinner="dots"):
+    with console.status("[dim]Preparando e resolvendo caminhos...[/dim]", spinner="dots"):
         resolved = _resolve_inputs(paths_to_process, config.paths.parquet_input)
         schemas = extract_all_schemas(resolved)
 
@@ -376,8 +376,8 @@ def generate(
     # --- Enriquecimento com IA ---
     ai_results = {}
     if layer in ("silver", "both") and config.ai.enabled and ai:
-        mode_label = "[bold red]FORCE[/bold red]" if force else "[bold green]CACHE[/bold green]"
-        with console.status(f"[bold magenta]Enriquecendo metadata com AI ({mode_label})...[/bold magenta]", spinner="bouncingBar"):
+        mode_label = "[red]FORCE[/red]" if force else "[green]CACHE[/green]"
+        with console.status(f"[dim]Enriquecendo metadata com IA ({mode_label})...[/dim]", spinner="dots"):
             ai_results = manager.enrich_batch(schemas)
 
         # Auto-aprendizado do glossário
@@ -394,17 +394,17 @@ def generate(
         p_db = db or schema.db or "raw"
         p_table = schema.table_name
         
-        console.print("\n[bold yellow]🔍 Confirmação de Nome[/bold yellow]")
+        console.print("\n[yellow]Confirmação de Nome[/yellow]")
         console.print(f"Origem: [dim]{schema.source_file}[/dim]")
         
-        if not Confirm.ask(f"O nome do arquivo gerado será [bold green]{p_db}_{p_table}.sqlx[/bold green]. Está correto?", default=True):
+        if not Confirm.ask(f"O nome do arquivo gerado será [green]{p_db}_{p_table}.sqlx[/green]. Está correto?", default=True):
             schema.db = Prompt.ask("Informe o nome do Banco (Dataset)", default=p_db)
             schema.table_name = Prompt.ask("Informe o nome da Tabela", default=p_table)
-            console.print(f"✅ Ajustado para: [bold green]{schema.db}_{schema.table_name}.sqlx[/bold green]\n")
+            console.print(f"Ajustado para: [green]{schema.db}_{schema.table_name}.sqlx[/green]\n")
         else:
             schema.db = p_db # Garante que o banco seja fixado
 
-    console.rule(f"[bold magenta]Gerando arquivos SQLX ({layer})[/bold magenta]")
+    console.rule(f"[dim]Gerando arquivos SQLX ({layer})[/dim]")
     for schema in schemas:
         # Se foi passado via flag --db, sobrecarrega o schema (exceto se já confirmamos acima)
         if db and len(schemas) > 1:
@@ -421,14 +421,14 @@ def generate(
             )
     if layer in ("silver", "both"):
         aviso = (
-            "Revise [bold]muito[/bold] o código gerado em [cyan].sqlx[/cyan]!\n"
+            "Revise o código gerado em [cyan].sqlx[/cyan]!\n"
             "Verifique se as tipagens e formatações estão corretas e utilize as funções padronizadas "
-            "do [bold green]utils.js[/bold green] do Dataform para eventuais tratamentos complexos e limpezas."
+            "do [green]utils.js[/green] do Dataform para eventuais tratamentos complexos e limpezas."
         )
         console.print()
-        console.print(Panel(aviso, title="⚠️  [bold yellow]Atenção: Camada Silver[/bold yellow]", border_style="yellow", padding=(1, 2)))
+        console.print(Panel(aviso, title="[yellow]Atenção: Camada Silver[/yellow]", border_style="yellow", padding=(1, 2)))
 
-    console.print("\n[bold green]✨ Geração concluída com sucesso![/bold green]\n")
+    console.print("\n[green]Geração concluída com sucesso.[/green]\n")
 
 
 # ---------------------------------------------------------------
@@ -452,11 +452,11 @@ def infer_schema(
 
     resolved = _resolve_inputs(input, "./files")
     
-    with console.status("[bold cyan]Inferindo schemas dos arquivos...[/bold cyan]", spinner="dots"):
+    with console.status("[dim]Inferindo schemas dos arquivos...[/dim]", spinner="dots"):
         schemas = extract_all_schemas(resolved)
 
     if not schemas:
-        console.print("[yellow]⚠️  Nenhum arquivo compatível encontrado.[/yellow]")
+        console.print("[yellow]Nenhum arquivo compatível encontrado.[/yellow]")
         raise typer.Exit(0)
 
     saved = []
@@ -465,11 +465,11 @@ def infer_schema(
         saved.append(path)
 
     # Exibe tabela resumo
-    table = Table(title="📊 Schemas Extraídos", box=box.SIMPLE_HEAD)
-    table.add_column("Tabela", style="cyan", no_wrap=True)
-    table.add_column("Colunas", justify="right", style="magenta")
-    table.add_column("Linhas", justify="right", style="green")
-    table.add_column("Amostra", justify="right", style="blue")
+    table = Table(title="Schemas Extraídos", box=box.SIMPLE_HEAD)
+    table.add_column("Tabela", style="default", no_wrap=True)
+    table.add_column("Colunas", justify="right", style="default")
+    table.add_column("Linhas", justify="right", style="default")
+    table.add_column("Amostra", justify="right", style="dim")
     table.add_column("Arquivo JSON", style="dim")
 
     for schema, path in zip(schemas, saved):
@@ -482,7 +482,7 @@ def infer_schema(
         )
 
     console.print(table)
-    console.print(f"\n[bold green]✅ {len(saved)} schemas salvos em: {output}[/bold green]\n")
+    console.print(f"\n[green]{len(saved)} schemas salvos em: {output}[/green]\n")
 
 
 # ---------------------------------------------------------------
@@ -503,16 +503,16 @@ def validate(
     Exemplos:
       python main.py validate --dir ./generated/silver
     """
-    console.rule("[bold cyan]Validando arquivos SQLX[/bold cyan]")
+    console.rule("[dim]Validando arquivos SQLX[/dim]")
 
     sqlx_dir = Path(directory)
     if not sqlx_dir.exists():
-        console.print(f"[bold red]❌ Diretório não encontrado:[/bold red] {directory}")
+        console.print(f"[red]Diretório não encontrado:[/red] {directory}")
         raise typer.Exit(1)
 
     sqlx_files = list(sqlx_dir.glob("*.sqlx"))
     if not sqlx_files:
-        console.print(f"[yellow]⚠️  Nenhum arquivo .sqlx encontrado em [bold]{directory}[/bold][/yellow]")
+        console.print(f"[yellow]Nenhum arquivo .sqlx encontrado em {directory}[/yellow]")
         raise typer.Exit(0)
 
     total_issues = 0
@@ -555,7 +555,7 @@ def validate(
         # Output
         if issues:
             total_issues += len(issues)
-            console.print(f"\n[bold yellow]⚠️  {file_path.name}[/bold yellow]")
+            console.print(f"\n[yellow]{file_path.name}[/yellow]")
             for issue in issues:
                 console.print(f"  [red]->[/red] {issue}")
         else:
@@ -563,9 +563,9 @@ def validate(
 
     console.print()
     if total_issues == 0:
-        console.print(Panel(f"[bold green]✅ Todos os {len(sqlx_files)} arquivos foram validados sem problemas![/bold green]", border_style="green"))
+        console.print(Panel(f"[green]Todos os {len(sqlx_files)} arquivos foram validados sem problemas.[/green]", border_style="green"))
     else:
-        console.print(Panel(f"[bold red]⚠️  {total_issues} problema(s) encontrado(s) em {len(sqlx_files)} arquivo(s)[/bold red]", border_style="red"))
+        console.print(Panel(f"[red]{total_issues} problema(s) encontrado(s) em {len(sqlx_files)} arquivo(s)[/red]", border_style="red"))
 
 
 # ---------------------------------------------------------------
@@ -595,7 +595,7 @@ def generate_docs(
 
     resolved = _resolve_inputs(input, "./files")
     
-    with console.status("[bold cyan]Extraindo schemas dos arquivos...[/bold cyan]", spinner="dots"):
+    with console.status("[dim]Extraindo schemas dos arquivos...[/dim]", spinner="dots"):
         schemas = extract_all_schemas(resolved)
 
     if not schemas:
@@ -607,11 +607,11 @@ def generate_docs(
         from src.metadata.metadata_manager import MetadataManager
         glossary: dict = _load_json(config.glossary_file) if Path(config.glossary_file).exists() else {}
         manager = MetadataManager(config, glossary=glossary, force=force)
-        
-        with console.status("[bold magenta]Enriquecendo metadata com AI para documentação...[/bold magenta]", spinner="bouncingBar"):
+
+        with console.status("[dim]Enriquecendo metadata com IA para documentação...[/dim]", spinner="dots"):
             ai_map = manager.enrich_batch(schemas)
 
-    with console.status("[bold yellow]Montando arquivos Markdown...[/bold yellow]", spinner="dots"):
+    with console.status("[dim]Montando arquivos Markdown...[/dim]", spinner="dots"):
         doc_gen = DocGenerator(output)
         for schema in schemas:
             key = f"{schema.db}_{schema.table_name}" if schema.db else schema.table_name
@@ -620,7 +620,7 @@ def generate_docs(
         doc_gen.generate_data_dictionary(schemas, ai_metadata_map=ai_map)
         doc_gen.generate_index(schemas, ai_metadata_map=ai_map)
 
-    console.print(f"\n[bold green]Documentação gerada em: {output}[/bold green]")
+    console.print(f"\n[green]Documentação gerada em: {output}[/green]")
 
 
 # ---------------------------------------------------------------
