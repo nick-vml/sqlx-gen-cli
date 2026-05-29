@@ -24,15 +24,15 @@ def _transpose_sample(sample_data: list[dict[str, Any]]) -> dict[str, list[Any]]
     return result
 
 
-_CPF_RE = re.compile(r'^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$')
-_CNPJ_RE = re.compile(r'^\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}$')
+_CPF_RE = re.compile(r'^(\d{3}\.\d{3}\.\d{3}-\d{2}|\d{11})$')
+_CNPJ_RE = re.compile(r'^(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|\d{14})$')
 _EMAIL_RE = re.compile(r'\S+@\S+\.\S+')
-_MONEY_RE = re.compile(r'R\$|\d{1,3}(\.\d{3})*,\d{2}')
+_MONEY_RE = re.compile(r'R\$|(?<!\d)\d{1,3}(\.\d{3})*,\d{2}(?!\d)')
 _DATE_RE = re.compile(r'\b(\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})\b')
-_BOOL_VALUES = {"sim", "não", "nao", "s", "n", "true", "false", "ativo", "inativo", "0", "1"}
+_BOOL_VALUES = frozenset({"sim", "não", "nao", "s", "n", "true", "false", "ativo", "inativo", "0", "1"})
 
 
-def _detect_hints(_col_name: str, sample_values: list[Any]) -> str:
+def _detect_hints(col_name: str, sample_values: list[Any]) -> str:
     """Detecta padrões na amostra e retorna um hint para o prompt da IA."""
     non_null = [str(v) for v in sample_values if v is not None]
     if not non_null:

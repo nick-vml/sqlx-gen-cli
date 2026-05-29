@@ -136,3 +136,25 @@ def test_detect_hints_cpf_priority_over_date():
     hint = _detect_hints("documento", samples)
     assert "CPF" in hint
     assert "safeCastDate" not in hint
+
+
+def test_detect_hints_cnpj_sem_formatacao():
+    samples = ["12345678000199"]  # 14 bare digits
+    hint = _detect_hints("cnpj_cliente", samples)
+    assert "CNPJ" in hint
+
+
+def test_detect_hints_cpf_formato_parcial_nao_detecta():
+    # garbled partial format — must NOT be detected as CPF
+    samples = ["123.45678900"]  # one dot, no dash, not a valid CPF format
+    hint = _detect_hints("documento", samples)
+    assert "CPF" not in hint
+
+
+def test_detect_hints_monetario_false_positive():
+    # 4-digit number with comma — must NOT be detected as BRL monetary
+    samples = ["1000,00"]
+    hint = _detect_hints("algum_campo", samples)
+    # 1000,00 should NOT match — it has 4 digits before comma, which breaks the pattern
+    # The fix uses (?<!\d)\d{1,3} so "1000,00" should not be detected
+    assert "castMoneyBRL" not in hint
