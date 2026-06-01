@@ -155,9 +155,21 @@ def test_detect_hints_monetario_false_positive():
     # 4-digit number with comma — must NOT be detected as BRL monetary
     samples = ["1000,00"]
     hint = _detect_hints("algum_campo", samples)
-    # 1000,00 should NOT match — it has 4 digits before comma, which breaks the pattern
-    # The fix uses (?<!\d)\d{1,3} so "1000,00" should not be detected
     assert "castMoneyBRL" not in hint
+
+
+def test_detect_hints_cpf_suprimido_em_coluna_telefone():
+    # 11-digit bare number looks like CPF but column name signals phone
+    samples = ["11987654321"]
+    assert "CPF" not in _detect_hints("telefone_celular", samples)
+    assert "CPF" not in _detect_hints("fone_contato", samples)
+    assert "CPF" not in _detect_hints("cel_whatsapp", samples)
+
+
+def test_detect_hints_cpf_nao_suprimido_em_coluna_generica():
+    # Same 11 digits on a generic column name — should still fire CPF hint
+    samples = ["12345678900"]
+    assert "CPF" in _detect_hints("numero_documento", samples)
 
 
 # ---------------------------------------------------------------------------
@@ -279,3 +291,18 @@ def test_prompt_handles_datetime_sample():
     user_msg = messages[1]["content"]
     assert "DT_NASCIMENTO" in user_msg
     assert "1985" in user_msg
+    # TIMESTAMP column must not fire a "date in text" hint (not STRING type)
+    assert "[HINT:" not in user_msg
+
+
+def test_prompt_no_hint_for_non_string_column():
+    schema = _make_schema(
+        columns=[("VALOR", "FLOAT"), ("ATIVO", "BOOLEAN")],
+        sample_data=[
+            {"VALOR": 1500.0, "ATIVO": True},
+            {"VALOR": 200.5, "ATIVO": False},
+        ],
+    )
+    messages = build_enrichment_prompt(schema)
+    user_msg = messages[1]["content"]
+    assert "[HINT:" not in user_msg

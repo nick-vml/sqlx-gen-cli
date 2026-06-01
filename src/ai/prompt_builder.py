@@ -30,6 +30,7 @@ _EMAIL_RE = re.compile(r'\S+@\S+\.\S+')
 _MONEY_RE = re.compile(r'R\$|(?<!\d)\d{1,3}(\.\d{3})*,\d{2}(?!\d)')
 _DATE_RE = re.compile(r'\b(\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})\b')
 _BOOL_VALUES = frozenset({"sim", "não", "nao", "s", "n", "true", "false", "ativo", "inativo", "0", "1"})
+_PHONE_KEYWORDS = frozenset({"telefone", "fone", "cel", "celular", "phone", "contato", "tel", "whatsapp"})
 
 
 def _detect_hints(col_name: str, sample_values: list[Any]) -> str:
@@ -38,8 +39,11 @@ def _detect_hints(col_name: str, sample_values: list[Any]) -> str:
     if not non_null:
         return ""
 
-    # CPF — prioridade 1
-    if any(_CPF_RE.match(v.strip()) for v in non_null):
+    col_lower = col_name.lower()
+
+    # CPF — prioridade 1 (suprimido quando o nome da coluna indica telefone)
+    is_phone_col = any(kw in col_lower for kw in _PHONE_KEYWORDS)
+    if not is_phone_col and any(_CPF_RE.match(v.strip()) for v in non_null):
         return "[HINT: padrão CPF → PII=true, suggested_function: removeSpecialChars]"
 
     # CNPJ — prioridade 2
@@ -226,7 +230,7 @@ def build_enrichment_prompt(
 
         samples = transposed.get(col.name, [])
         sample_repr = json.dumps(samples, ensure_ascii=False, default=str) if samples else "N/A"
-        pattern_hint = _detect_hints(col.name, samples)
+        pattern_hint = _detect_hints(col.name, samples) if col.type == "STRING" else ""
 
         line = (
             f"  - {col.name} ({col.type}, {'nullable' if col.nullable else 'required'}){desc_hint}\n"
