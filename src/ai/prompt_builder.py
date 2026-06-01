@@ -132,7 +132,7 @@ Você receberá os valores de amostra de cada coluna listados diretamente abaixo
 Use-os para:
 - Identificar o tipo real dos dados (ex: STRING que contém JSON, DATA ou UUID)
 - Inferir o significado semântico (ex: coluna 'STATUS' com valores 'ATIVO'/'INATIVO' → prefixo TP)
-- Detectar sensibilidade e PII (CPFs, e-mails, telefones nos valores)
+- Detectar sensibilidade e PII (CPFs, CNPJs, e-mails nos valores)
 
 ## HINTS DE PRÉ-ANÁLISE
 Algumas colunas virão com [HINT: ...] baseados em análise automática de padrões.
@@ -170,7 +170,7 @@ Você DEVE sugerir o prefixo mais adequado para CADA coluna. Use a tabela abaixo
   percentual/pc → PC | tipo/tp → TP | indicador/is/flag → IS | codigo/cd → CD
 - Palavras-chave em inglês:
   date → DT | value/amount → VL | name → NO | count → QT
-  percent → PC | type/status → TP | flag/is_/has_ → IS | id/code → CD
+  percent → PC | type/status → TP | flag/is_/has_ → IS | code → CD
 
 ## COLUNAS COM JSON ESTRUTURADO
 Se uma coluna STRING contiver JSON na amostra (indicado por HINT ou visível nos valores):
