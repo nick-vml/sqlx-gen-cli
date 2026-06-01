@@ -204,7 +204,7 @@ def build_enrichment_prompt(
         desc_hint = f"  // Descrição conhecida: {known_desc}" if known_desc else ""
 
         samples = transposed.get(col.name, [])
-        sample_repr = json.dumps(samples, ensure_ascii=False) if samples else "N/A"
+        sample_repr = json.dumps(samples, ensure_ascii=False, default=str) if samples else "N/A"
         pattern_hint = _detect_hints(col.name, samples)
 
         line = (

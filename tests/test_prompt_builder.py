@@ -1,5 +1,5 @@
-import pytest
-from src.ai.prompt_builder import _transpose_sample, _detect_hints
+from src.ai.prompt_builder import _transpose_sample, _detect_hints, build_enrichment_prompt
+from src.extractor.schema_extractor import TableSchema, ColumnSchema
 
 
 def test_transpose_sample_basic():
@@ -164,9 +164,6 @@ def test_detect_hints_monetario_false_positive():
 # build_enrichment_prompt integration tests
 # ---------------------------------------------------------------------------
 
-from src.ai.prompt_builder import build_enrichment_prompt
-from src.extractor.schema_extractor import TableSchema, ColumnSchema
-
 
 def _make_schema(columns, sample_data):
     return TableSchema(
@@ -267,3 +264,18 @@ def test_prompt_glossary_hint_included():
     messages = build_enrichment_prompt(schema, glossary={"CD_EMPRESA": "Código interno da empresa"})
     user_msg = messages[1]["content"]
     assert "Código interno da empresa" in user_msg
+
+
+def test_prompt_handles_datetime_sample():
+    from datetime import datetime
+    schema = _make_schema(
+        columns=[("DT_NASCIMENTO", "TIMESTAMP")],
+        sample_data=[
+            {"DT_NASCIMENTO": datetime(1985, 3, 15, 10, 30)},
+            {"DT_NASCIMENTO": datetime(1990, 7, 22, 0, 0)},
+        ],
+    )
+    messages = build_enrichment_prompt(schema)
+    user_msg = messages[1]["content"]
+    assert "DT_NASCIMENTO" in user_msg
+    assert "1985" in user_msg
